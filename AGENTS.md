@@ -1,11 +1,11 @@
 # AGENTS.md — nearpay-sandbox
 
-You are working in **nearpay-sandbox**, one of 26 NearPay repositories (`nearpay-brain/architecture/repositories.md`).
+You are working in **nearpay-sandbox**, one of 27 NearPay repositories (`nearpay-brain/architecture/repositories.md`).
 Scope: Deterministic simulator of the route provider and chains for test mode, local development and E2E (NEAR Intents has no testnet).
 
 ## Before changing anything
 
-1. Read `../nearpay-brain/AGENTS.md`, then the docs listed in this repo's README.
+1. Read `../nearpay-brain/AGENTS.md`, then this repo's LLD (`../nearpay-brain/lld/sandbox.md`) — it is the implementation spec; do not make design decisions it already makes.
 2. Contracts (requests, responses, events, errors) come from `@nearpay/spec`. If one must change, open a PR in `nearpay-spec` first; never hand-write contract types here.
 3. Check your change against invariants INV-1…INV-9 in `nearpay-brain/product/requirements.md`.
 
