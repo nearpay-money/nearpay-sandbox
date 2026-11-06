@@ -11,12 +11,12 @@ Scope: Deterministic simulator of the route provider and chains for test mode, l
 
 ## Rules for this repo
 
-- Hexagonal layout: `src/domain` is pure (no I/O); `src/app` holds use cases; `src/infra` adapts DB, HTTP clients and NATS; `src/api` maps spec-generated routes to use cases.
-- Every state change writes the aggregate row, a transition row and an outbox row in ONE transaction.
-- Every public POST honours `Idempotency-Key` inside the same transaction as the side effect.
-- Every query filters by `account_id` AND `livemode` (INV-8).
-- Money is bigint base units + asset/currency (`@nearpay-internal/money`). No floats.
-- Consumers dedupe by event ID (inbox table) and ignore stale `aggregate_version`.
+- Hexagonal layout: `src/domain` and `src/scenarios` are pure (no I/O); `src/app` holds use cases; `src/infra` adapts the DB; `src/api` maps spec routes to use cases.
+- The sandbox is a simulator, not a money service: it owns no merchant objects and emits no domain events, so there are no transitions or outbox rows. Every change to a simulated execution happens in one transaction holding its row (`FOR UPDATE`).
+- Test mode only: refuse any live-mode principal (INV-8). Never call a real chain or provider.
+- Parity first: requests and responses use the same `@nearpay-internal/spec` 1Click schemas as the rails adapter; signatures use the 1Click construction; Verifier rejections use mainnet's messages.
+- Money is bigint base units (`@nearpay-internal/money` rationals). No floats in amounts.
+- Every scenario and rule has a test; keep ≥ 90% branch coverage on the pure code.
 
 ## Never
 
