@@ -68,6 +68,11 @@ describe("POST /v0/quote", () => {
     expect(q.quote).toMatchObject({ amountOut: "2000017", minAmountOut: "2000017", amountIn: "2014018" });
     expect(q.quote.deadline).toBe(q.quoteRequest.deadline);
     expect(q.quoteRequest).not.toHaveProperty("scenario_amount");
+    // appFees come back split 50/50 with the provider's account, like 1Click (recorded quote).
+    expect(q.quoteRequest.appFees).toEqual([
+      { recipient: "treasury.nearpay.near", fee: 25 },
+      { recipient: "sandbox-oneclick-fees.near", fee: 25 },
+    ]);
   });
 
   it("issues a distinct deposit address per quote", async () => {

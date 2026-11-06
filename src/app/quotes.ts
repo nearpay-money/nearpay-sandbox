@@ -64,10 +64,33 @@ function withdrawFee(dest: SandboxToken, chain: string, intents: boolean): strin
   return ((num + p - 1n) / p).toString();
 }
 
+/**
+ * The fee account 1Click adds when it splits `appFees` (stands in for 1Click's own account).
+ * Recorded 1Click quote (2026-11-05): a request `appFees: [{recipient, fee: 50}]` is echoed as
+ * `[{recipient, fee: 25}, {<1Click account>, fee: 25}]` — the documented 50/50 split. The quote
+ * signature does not cover `appFees`, so the integrator checks the echoed split itself (rails §8.1).
+ */
+export const PROVIDER_FEE_ACCOUNT = "sandbox-oneclick-fees.near";
+
+/** 50/50 split of each app fee; the provider half rounds up (the integrator's share never exceeds half). */
+export function splitAppFees(
+  fees: readonly { recipient: string; fee: number }[],
+): { recipient: string; fee: number }[] {
+  const out: { recipient: string; fee: number }[] = [];
+  let provider = 0;
+  for (const f of fees) {
+    const share = Math.ceil(f.fee / 2);
+    provider += share;
+    out.push({ recipient: f.recipient, fee: f.fee - share });
+  }
+  if (provider > 0) out.push({ recipient: PROVIDER_FEE_ACCOUNT, fee: provider });
+  return out;
+}
+
 /** The request as 1Click echoes it (the sandbox-only `scenario_amount` is not part of the quote). */
 function echo(req: SandboxQuoteRequest): OneClickQuoteResponse["quoteRequest"] {
-  const { scenario_amount: _ignored, ...rest } = req;
-  return rest as OneClickQuoteResponse["quoteRequest"];
+  const { scenario_amount: _ignored, appFees, ...rest } = req;
+  return { ...rest, ...(appFees ? { appFees: splitAppFees(appFees) } : {}) } as OneClickQuoteResponse["quoteRequest"];
 }
 
 export function signQuote(response: Omit<OneClickQuoteResponse, "signature">, key: Sandbox["signingKey"]): string {

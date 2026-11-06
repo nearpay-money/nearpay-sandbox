@@ -183,7 +183,9 @@ function logsOf(checked: readonly CheckedPayload[]): string[] {
   const logs: string[] = [];
   for (const c of checked) {
     for (const t of c.transfers) {
-      logs.push(mtTransferLog({ from: t.from, to: t.to, tokens: t.tokens, memo: t.memo }));
+      // Mainnet (SP-14, 2026-11-06): the NEP-245 mt_transfer of a `transfer` intent carries no memo;
+      // the memo (the payment binding) appears only on the DIP-4 `transfer` event.
+      logs.push(mtTransferLog({ from: t.from, to: t.to, tokens: t.tokens }));
       logs.push(
         eventLog("dip4", DIP4_VERSION, "transfer", [
           {

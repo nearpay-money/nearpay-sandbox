@@ -8,6 +8,7 @@ import {
   intentsExecuted,
   makeNonce,
   mtTransfers,
+  parseDip4Events,
   signErc191,
   signNep413,
   signRawEd25519,
@@ -113,15 +114,17 @@ describe("simulate and execute", () => {
       .filter((e) => e.tx_hash === ex.tx_hash)
       .map((e) => e.log);
     expect(mtTransfers(logs)).toEqual([
-      { old_owner_id: payer, new_owner_id: "merchant.near", token_ids: [USDC_NEAR], amounts: ["10000"], memo: binding },
+      { old_owner_id: payer, new_owner_id: "merchant.near", token_ids: [USDC_NEAR], amounts: ["10000"] },
       {
         old_owner_id: payer,
         new_owner_id: "treasury.nearpay.near",
         token_ids: [USDC_NEAR],
         amounts: ["25"],
-        memo: binding,
       },
     ]);
+    // The binding memo rides on the DIP-4 transfer events only, as on mainnet (SP-14).
+    const dip4 = parseDip4Events(logs).filter((e) => e.event === "transfer");
+    expect(dip4.map((e) => (e.data as { memo?: string }[])[0]?.memo)).toEqual([binding, binding]);
     expect(intentsExecuted(logs)).toEqual(ex.intents_executed);
   });
 
