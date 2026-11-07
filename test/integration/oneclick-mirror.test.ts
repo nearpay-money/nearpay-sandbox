@@ -66,13 +66,29 @@ describe("POST /v0/quote", () => {
     expect(verifyQuoteSignature(q as never)).toBe(false);
     expect(q.quote.depositAddress).toMatch(/^0x[0-9a-f]{40}$/);
     expect(q.quote).toMatchObject({ amountOut: "2000017", minAmountOut: "2000017", amountIn: "2014018" });
-    expect(q.quote.deadline).toBe(q.quoteRequest.deadline);
     expect(q.quoteRequest).not.toHaveProperty("scenario_amount");
-    // appFees come back split 50/50 with the provider's account, like 1Click (recorded quote).
+    expect(q.quoteRequest.quoteWaitingTimeMs).toBe(3000);
+    // appFees come back split 50/50 with the provider's account, like 1Click (recorded quote), each item with
+    // live 1Click's limitOrderId: null (mainnet status body, 2026-11-07).
     expect(q.quoteRequest.appFees).toEqual([
-      { recipient: "treasury.nearpay.near", fee: 25 },
-      { recipient: "sandbox-oneclick-fees.near", fee: 25 },
+      { limitOrderId: null, recipient: "treasury.nearpay.near", fee: 25 },
+      { limitOrderId: null, recipient: "sandbox-oneclick-fees.near", fee: 25 },
     ]);
+  });
+
+  it("returns live 1Click's two deadlines: the requested one, and the address inactive 3 days later", async () => {
+    const deadline = new Date(Math.floor(Date.now() / 1000) * 1000 + 15 * 60_000).toISOString();
+    const q = OneClickQuoteResponse.parse((await s.call("POST", "/v0/quote", quoteRequest({ deadline }))).body);
+    const inactive = new Date(Date.parse(deadline) + 3 * 24 * 3_600_000).toISOString();
+    expect(q.quoteRequest.deadline).toBe(deadline);
+    expect([q.quote.deadline, q.quote.timeWhenInactive]).toEqual([inactive, inactive]);
+    // The SDK hashes the quote merged over the request, so only quote.deadline is signed (as on live 1Click).
+    const key = s.managerPublicKey;
+    expect(verifyQuoteSignature({ ...q, quote: { ...q.quote, deadline } } as never, key)).toBe(false);
+    const other = new Date(Date.parse(deadline) + 60_000).toISOString();
+    expect(verifyQuoteSignature({ ...q, quoteRequest: { ...q.quoteRequest, deadline: other } } as never, key)).toBe(
+      true,
+    );
   });
 
   it("issues a distinct deposit address per quote", async () => {
@@ -161,6 +177,18 @@ describe("GET /v0/status and POST /v0/deposit/submit", () => {
     const pending = OneClickStatusResponse.parse((await s.call("GET", `/v0/status?depositAddress=${address}`)).body);
     expect(pending.status).toBe("PENDING_DEPOSIT");
     expect(pending.quoteResponse.signature).toBe(q.signature);
+    // Live 1Click's status echo omits quoteWaitingTimeMs, which the signature covers: it verifies only with the
+    // requested value put back.
+    expect(pending.quoteResponse.quoteRequest).not.toHaveProperty("quoteWaitingTimeMs");
+    expect(pending.quoteResponse.quoteRequest).toEqual((({ quoteWaitingTimeMs: _w, ...rest }) => rest)(q.quoteRequest));
+    expect(pending.quoteResponse.quote).toEqual(q.quote);
+    const echoed = pending.quoteResponse as never;
+    expect(verifyQuoteSignature(echoed, s.managerPublicKey)).toBe(false);
+    const restored = {
+      ...pending.quoteResponse,
+      quoteRequest: { ...pending.quoteResponse.quoteRequest, quoteWaitingTimeMs: 3000 },
+    };
+    expect(verifyQuoteSignature(restored as never, s.managerPublicKey)).toBe(true);
     const tx = `0x${"ab".repeat(32)}`;
     const first = await s.call("POST", "/v0/deposit/submit", { txHash: tx, depositAddress: address });
     const again = await s.call("POST", "/v0/deposit/submit", { txHash: tx, depositAddress: address });

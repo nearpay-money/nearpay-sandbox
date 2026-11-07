@@ -4,6 +4,15 @@
  * response with the 1Click construction (`quoteHash` of `@defuse-protocol/one-click-sdk-typescript`:
  * Ed25519 over base58(sha256(stable-stringify({…request, …quote, timestamp})))), so rails and
  * sentinel verify sandbox quotes with the same `verifyQuoteSignature` call and the sandbox key.
+ *
+ * Live 1Click quirks mirrored here (mainnet, 2026-11-07; nearpay-brain reference/landscape.md §2):
+ * - two deadlines: `quoteRequest.deadline` is the requested one (refunds begin), `quote.deadline` and
+ *   `timeWhenInactive` are when the deposit address goes inactive, {@link ADDRESS_ACTIVE_MS} later;
+ * - `appFees[]` items carry `limitOrderId: null`.
+ * The signature covers exactly what the SDK hashes, over the full request as received
+ * (`quoteWaitingTimeMs` included): the SDK merges the quote over the request, so of the two deadlines
+ * only `quote.deadline` is signed, as on live 1Click. `GET /v0/status` echoes the request without
+ * `quoteWaitingTimeMs` (./executions.ts).
  */
 import { createHash, sign } from "node:crypto";
 import { quoteHash } from "@defuse-protocol/one-click-sdk-typescript";
@@ -32,6 +41,9 @@ const WITHDRAW_FEE_USD: Record<string, string> = {
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "0.002",
   "bip122:000000000019d6689c085ae165831e93": "2",
 };
+
+/** Live 1Click: the deposit address stays active 3 days past the requested deadline (`quote.deadline`, `timeWhenInactive`). */
+export const ADDRESS_ACTIVE_MS = 3 * 24 * 3_600_000;
 
 const invalid = (detail: string, param?: string) => ApiError.invalid(detail, param);
 
@@ -87,10 +99,16 @@ export function splitAppFees(
   return out;
 }
 
-/** The request as 1Click echoes it (the sandbox-only `scenario_amount` is not part of the quote). */
-function echo(req: SandboxQuoteRequest): OneClickQuoteResponse["quoteRequest"] {
+/** The request as 1Click echoes it (the sandbox-only `scenario_amount` is not part of the quote), appFees split 50/50. */
+function echoed(req: SandboxQuoteRequest): OneClickQuoteResponse["quoteRequest"] {
   const { scenario_amount: _ignored, appFees, ...rest } = req;
   return { ...rest, ...(appFees ? { appFees: splitAppFees(appFees) } : {}) } as OneClickQuoteResponse["quoteRequest"];
+}
+
+/** {@link echoed} on the wire: each appFees item carries live 1Click's `limitOrderId: null`. */
+function echo(req: SandboxQuoteRequest): OneClickQuoteResponse["quoteRequest"] {
+  const e = echoed(req);
+  return e.appFees ? { ...e, appFees: e.appFees.map((f) => ({ limitOrderId: null, ...f })) } : e;
 }
 
 export function signQuote(response: Omit<OneClickQuoteResponse, "signature">, key: Sandbox["signingKey"]): string {
@@ -147,6 +165,7 @@ export async function createQuote(sb: Sandbox, req: SandboxQuoteRequest): Promis
     throw invalid("deadline must be at least 60 seconds in the future", "deadline");
   const scenario = scenarioOf(req.scenario_amount ?? req.amount);
   const deadline = new Date(deadlineMs).toISOString();
+  const inactiveAt = new Date(deadlineMs + ADDRESS_ACTIVE_MS).toISOString();
 
   let seq: bigint | null = null;
   let address: string | undefined;
@@ -154,7 +173,7 @@ export async function createQuote(sb: Sandbox, req: SandboxQuoteRequest): Promis
   if (!req.dry) {
     const r = await sql<{ s: string }>`select nextval('sim_quote_seq')::text as s`.execute(sb.db);
     seq = BigInt((r.rows[0] as { s: string }).s);
-    const seed = `${seq}|${canonicalJson(echo(req))}`;
+    const seed = `${seq}|${canonicalJson(echoed(req))}`; // unchanged by wire-only fields
     address =
       req.depositType === "INTENTS"
         ? intentsAccount(seed)
@@ -173,7 +192,7 @@ export async function createQuote(sb: Sandbox, req: SandboxQuoteRequest): Promis
     amountOutFormatted: formatted(amounts.amountOut, destination),
     amountOutUsd: usdValue(amounts.amountOut, destination),
     minAmountOut: amounts.minAmountOut.toString(),
-    ...(req.dry ? {} : { deadline, timeWhenInactive: deadline }),
+    ...(req.dry ? {} : { deadline: inactiveAt, timeWhenInactive: inactiveAt }),
     timeEstimate: TIME_ESTIMATE_S[originChain.family] ?? 60,
     refundFee: "0",
     withdrawFee: withdrawFee(destination, destChain, req.recipientType === "INTENTS"),

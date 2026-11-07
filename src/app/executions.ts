@@ -286,6 +286,17 @@ function txDetails(chain: string, hashes: readonly string[]) {
   return hashes.map((hash) => ({ hash, explorerUrl: getChain(chain) ? explorerTxUrl(chain, hash) : "" }));
 }
 
+/**
+ * The quote response as live 1Click nests it in `GET /v0/status` (mainnet, 2026-11-07): its `quoteRequest` echo
+ * omits `quoteWaitingTimeMs`, although the signature covers it (the quote was signed over the full request), so a
+ * verifier has to put the requested value back — sentinel does (rails' 3000).
+ */
+export function statusQuoteResponse(stored: unknown): OneClickStatusResponse["quoteResponse"] {
+  const q = stored as OneClickStatusResponse["quoteResponse"];
+  const { quoteWaitingTimeMs: _omitted, ...quoteRequest } = q.quoteRequest;
+  return { ...q, quoteRequest };
+}
+
 /** 1Click status response for a quote row. */
 export function statusOf(row: QuoteRow): OneClickStatusResponse {
   const r = req(row);
@@ -298,7 +309,7 @@ export function statusOf(row: QuoteRow): OneClickStatusResponse {
   const ref = fmt(row.refunded_amount, origin);
   return {
     correlationId: row.correlation_id,
-    quoteResponse: row.response as never,
+    quoteResponse: statusQuoteResponse(row.response),
     status: row.state,
     updatedAt: row.updated_at.toISOString(),
     swapDetails: {
