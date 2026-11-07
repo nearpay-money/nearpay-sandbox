@@ -13,7 +13,16 @@ import type { OneClickStatusResponse } from "@nearpay-internal/spec";
 import { formatted, scenarioDeposit, usdValue } from "../domain/quote-math.js";
 import { tokenById } from "../domain/tokens.js";
 import type { SimQuotesTable, StepRow } from "../infra/db/schema.js";
-import { dueSteps, isTerminal, nextDue, type Scenario, type Step, timeline } from "../scenarios/scenario.js";
+import {
+  dueSteps,
+  duplicateInTime,
+  duplicateTargets,
+  isTerminal,
+  nextDue,
+  type Scenario,
+  type Step,
+  timeline,
+} from "../scenarios/scenario.js";
 import { txHash } from "../simulated-chains/addresses.js";
 import { NEAR_CHAIN, payout, recordTx } from "../simulated-chains/settlement.js";
 import { dbNow, depositKey, type Sandbox, type Tx } from "./context.js";
@@ -27,7 +36,7 @@ interface QuoteRequestView {
   recipientType: string;
   refundTo: string;
   refundType: string;
-  referral?: string;
+  referral?: string | null;
 }
 
 const req = (row: QuoteRow) => row.request as unknown as QuoteRequestView;
@@ -174,6 +183,8 @@ export async function materializeDue(sb: Sandbox, limit = 50): Promise<number> {
 interface DepositInput {
   amount: bigint;
   txHash: string;
+  /** Counts as made before the deadline (a refund leg's scenario `06` duplicate). */
+  inTime?: boolean;
 }
 
 /** Records a deposit and starts its timeline (or, in manual mode, only moves to KNOWN_DEPOSIT_TX). */
@@ -209,6 +220,7 @@ export async function recordDeposit(sb: Sandbox, tx: Tx, row: QuoteRow, d: Depos
     amountOut: BigInt(row.amount_out),
     deadline: row.deadline.getTime(),
     timeScale: sb.timeScale,
+    ...(d.inTime ? { inTime: true } : {}),
   });
   const first = steps[0] as Step;
   return tx
@@ -224,35 +236,99 @@ export async function recordDeposit(sb: Sandbox, tx: Tx, row: QuoteRow, d: Depos
     .executeTakeFirstOrThrow();
 }
 
-/** Scenario 06: a deposit also pays the older open quotes of the same payment (duplicate settlement). */
-export async function payOlderSiblings(sb: Sandbox, tx: Tx, row: QuoteRow, now: Date): Promise<void> {
+/**
+ * Scenario 06 (sandbox LLD §4): a deposit also pays other open quotes of its group — a payment's older attempts
+ * (duplicate settlement → overpayment), or every other open leg of a refund (duplicate refund leg; the duplicate
+ * deposit counts as made in time, so an expired leg still settles). Siblings are locked in `seq` order.
+ */
+export async function payDuplicateSiblings(sb: Sandbox, tx: Tx, row: QuoteRow, now: Date): Promise<void> {
   if (row.scenario !== "06") return;
-  const siblings = await tx
+  const kind = row.scenario_kind;
+  let q = tx
     .selectFrom("sim_quotes")
     .selectAll()
     .where("group_key", "=", row.group_key)
     .where("state", "=", "PENDING_DEPOSIT")
     .where("deposited_amount", "is", null)
-    .where("seq", "<", row.seq.toString() as never)
-    .where("deposit_key", "<>", row.deposit_key)
-    .orderBy("seq")
-    .forUpdate()
-    .execute();
+    .where("deposit_key", "<>", row.deposit_key);
+  if (duplicateTargets(kind) === "older") q = q.where("seq", "<", row.seq.toString() as never);
+  const siblings = await q.orderBy("seq").forUpdate().execute();
   for (const s of siblings) {
     await recordDeposit(
       sb,
       tx,
       s,
-      { amount: BigInt(s.amount_in), txHash: originFamilyTx(s, `dup:${s.deposit_key}`) },
+      {
+        amount: BigInt(s.amount_in),
+        txHash: originFamilyTx(s, `dup:${s.deposit_key}`),
+        ...(duplicateInTime(kind) ? { inTime: true } : {}),
+      },
       now,
     );
+    sb.log.info({ deposit: s.deposit_address, of: row.deposit_address, kind }, "sandbox duplicate deposit (06)");
   }
+}
+
+/** One token movement into an Intents account (a Verifier transfer). */
+export interface IntentsCredit {
+  readonly from: string;
+  readonly to: string;
+  readonly token: string;
+  readonly amount: bigint;
+  readonly memo?: string | undefined;
+}
+
+/**
+ * Intents transfers into the deposit address of an `INTENTS`-deposit quote are its deposit, as 1Click sees a
+ * transfer inside intents.near (refund route legs from a merchant's Intents account, sandbox LLD §3/§8): the
+ * deposit is recorded with the Verifier transaction hash and the scenario timeline starts (plus scenario `06`
+ * duplicates). Called before the transfer moves balances, so the lock order (quote rows, then balances) matches
+ * the materializer's. Transfers of another asset, or into a quote that already has a deposit or is final, are
+ * not attributed (logged). Returns the number of deposits recorded.
+ */
+export async function attributeIntentsDeposits(
+  sb: Sandbox,
+  tx: Tx,
+  credits: readonly IntentsCredit[],
+  txHash: string,
+  now: Date,
+): Promise<number> {
+  const receivers = [...new Set(credits.map((c) => c.to))];
+  if (receivers.length === 0) return 0;
+  const rows = await tx
+    .selectFrom("sim_quotes")
+    .selectAll()
+    .where("deposit_address", "in", receivers)
+    .where("origin_chain", "=", NEAR_CHAIN)
+    .where(sql<boolean>`request->>'depositType' = 'INTENTS'`)
+    .orderBy("deposit_key")
+    .forUpdate()
+    .execute();
+  if (rows.length === 0) return 0;
+  const byKey = new Map(rows.map((r) => [r.deposit_key, r]));
+  let n = 0;
+  for (const c of credits) {
+    const row = byKey.get(depositKey(c.to, c.memo)) ?? byKey.get(depositKey(c.to, null));
+    if (!row) continue;
+    if (req(row).originAsset !== c.token || row.deposited_amount !== null || isTerminal(row.state)) {
+      sb.log.warn(
+        { deposit: c.to, token: c.token, state: row.state, tx: txHash },
+        "sandbox Intents transfer into a deposit address not attributed",
+      );
+      continue;
+    }
+    const updated = await recordDeposit(sb, tx, row, { amount: c.amount, txHash }, now);
+    byKey.set(row.deposit_key, updated);
+    await payDuplicateSiblings(sb, tx, updated, now);
+    n++;
+  }
+  return n;
 }
 
 /** `POST /v0/deposit/submit`: the payer's wallet reported a deposit tx (idempotent per tx hash). */
 export async function submitDeposit(
   sb: Sandbox,
-  b: { txHash: string; depositAddress: string; memo?: string | undefined },
+  b: { txHash: string; depositAddress: string; memo?: string | null | undefined },
 ): Promise<OneClickStatusResponse> {
   return withTx(sb.db, async (tx) => {
     let row = await lockQuote(tx, depositKey(b.depositAddress, b.memo));
@@ -264,7 +340,7 @@ export async function submitDeposit(
         minAmountIn: BigInt(row.min_amount_in),
       });
       row = await recordDeposit(sb, tx, row, { amount, txHash: b.txHash }, now);
-      await payOlderSiblings(sb, tx, row, now);
+      await payDuplicateSiblings(sb, tx, row, now);
     } else if (!row.deposit_tx_hashes.includes(b.txHash)) {
       row = await tx
         .updateTable("sim_quotes")
@@ -287,17 +363,22 @@ function txDetails(chain: string, hashes: readonly string[]) {
 }
 
 /**
- * The quote response as live 1Click nests it in `GET /v0/status` (mainnet, 2026-11-07): its `quoteRequest` echo
+ * The quote response as live 1Click nests it in `GET /v0/status` (mainnet, 2026-11-07; spec 0.2.0
+ * `OneClickStatusQuoteResponse`): without `correlationId` (the status carries its own), and its `quoteRequest` echo
  * omits `quoteWaitingTimeMs`, although the signature covers it (the quote was signed over the full request), so a
  * verifier has to put the requested value back — sentinel does (rails' 3000).
  */
 export function statusQuoteResponse(stored: unknown): OneClickStatusResponse["quoteResponse"] {
-  const q = stored as OneClickStatusResponse["quoteResponse"];
+  const { correlationId: _id, ...q } = stored as OneClickStatusResponse["quoteResponse"];
   const { quoteWaitingTimeMs: _omitted, ...quoteRequest } = q.quoteRequest;
   return { ...q, quoteRequest };
 }
 
-/** 1Click status response for a quote row. */
+/**
+ * 1Click status response for a quote row, in live 1Click's shape (recorded mainnet status body, 2026-11-07;
+ * spec 0.2.0): every swap detail is present, unset ones as `null`; `refundedAmount*` read `"0"` until a refund;
+ * `refundFee` / `withdrawFee` repeat the quote's; no `referral`.
+ */
 export function statusOf(row: QuoteRow): OneClickStatusResponse {
   const r = req(row);
   const origin = tokenById(r.originAsset);
@@ -307,32 +388,43 @@ export function statusOf(row: QuoteRow): OneClickStatusResponse {
   const dep = fmt(row.deposited_amount, origin);
   const out = fmt(row.delivered_amount, dest);
   const ref = fmt(row.refunded_amount, origin);
+  const quote = (row.response as { quote?: { refundFee?: string | null; withdrawFee?: string | null } }).quote;
   return {
     correlationId: row.correlation_id,
     quoteResponse: statusQuoteResponse(row.response),
     status: row.state,
     updatedAt: row.updated_at.toISOString(),
     swapDetails: {
+      depositedAmount: dep?.amount ?? null,
+      depositedAmountUsd: dep?.usd ?? null,
+      depositedAmountFormatted: dep?.formatted ?? null,
       intentHashes: [],
       nearTxHashes: row.near_tx_hashes,
-      ...(dep ? { amountIn: dep.amount, amountInFormatted: dep.formatted, amountInUsd: dep.usd } : {}),
-      ...(out ? { amountOut: out.amount, amountOutFormatted: out.formatted, amountOutUsd: out.usd, slippage: 0 } : {}),
+      amountIn: dep?.amount ?? null,
+      amountInFormatted: dep?.formatted ?? null,
+      amountInUsd: dep?.usd ?? null,
+      amountOut: out?.amount ?? null,
+      amountOutFormatted: out?.formatted ?? null,
+      amountOutUsd: out?.usd ?? null,
+      slippage: out ? 0 : null,
+      refundedAmount: ref?.amount ?? "0",
+      refundedAmountFormatted: ref?.formatted ?? "0",
+      refundedAmountUsd: ref?.usd ?? "0",
+      refundReason: row.refund_reason ?? null,
+      refundFee: quote?.refundFee ?? "0",
+      withdrawFee: quote?.withdrawFee ?? "0",
       originChainTxHashes: txDetails(row.origin_chain, row.deposit_tx_hashes),
       destinationChainTxHashes: txDetails(row.destination_chain, row.destination_tx_hashes),
-      ...(ref
-        ? { refundedAmount: ref.amount, refundedAmountFormatted: ref.formatted, refundedAmountUsd: ref.usd }
-        : {}),
-      ...(row.refund_reason ? { refundReason: row.refund_reason } : {}),
-      ...(dep
-        ? { depositedAmount: dep.amount, depositedAmountFormatted: dep.formatted, depositedAmountUsd: dep.usd }
-        : {}),
-      ...(r.referral ? { referral: r.referral } : {}),
     },
   };
 }
 
 /** `GET /v0/status`: materializes due steps first, so a poll always sees the current timeline state. */
-export async function getStatus(sb: Sandbox, address: string, memo?: string): Promise<OneClickStatusResponse> {
+export async function getStatus(
+  sb: Sandbox,
+  address: string,
+  memo?: string | undefined,
+): Promise<OneClickStatusResponse> {
   return withTx(sb.db, async (tx) => {
     const row = await lockQuote(tx, depositKey(address, memo));
     if (!row) throw notFound(address);

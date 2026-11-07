@@ -13,7 +13,8 @@
  * | 03  | (deposit above amountIn) SUCCESS, the excess refunded                            |
  * | 04  | FAILED after PROCESSING                                                         |
  * | 05  | SUCCESS, but the destination receives amountOut − 1 (short)                      |
- * | 06  | like 00; a deposit also pays the older open quotes of the same payment          |
+ * | 06  | like 00; a deposit also pays the older open quotes of the same payment, or every |
+ * |     | other open leg of the same refund (Stage 2 groups, {@link groupKey})              |
  * | 07  | SUCCESS 5 min after the deposit deadline (late settlement)                       |
  *
  * The outcome follows the deposit, as with 1Click EXACT_OUTPUT: below `minAmountIn` the deposit is
@@ -22,6 +23,9 @@
  * (`quoteRequest.deadline`, when refunds begin), never `quote.deadline`/`timeWhenInactive` (3 days later, as on
  * live 1Click). Offsets scale with NP_SANDBOX_TIME_SCALE.
  */
+
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes as utf8 } from "@noble/hashes/utils.js";
 
 export const SCENARIOS = ["00", "01", "02", "03", "04", "05", "06", "07"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
@@ -72,6 +76,11 @@ export interface TimelineInput {
   readonly deadline: number;
   /** Multiplies every relative offset (1.0 real time; the testbed may use 0.1). */
   readonly timeScale: number;
+  /**
+   * The deposit counts as made before the deadline even if it is recorded later: scenario `06` duplicate
+   * deposits into the other legs of a refund (the merchant also paid an expired leg, sandbox LLD §4).
+   */
+  readonly inTime?: boolean;
 }
 
 const SECOND = 1_000;
@@ -82,7 +91,7 @@ export function timeline(i: TimelineInput): Step[] {
   const at = (seconds: number) => i.depositAt + Math.round(seconds * SECOND * i.timeScale);
   const deposited = i.deposited.toString();
 
-  if (i.depositAt > i.deadline) {
+  if (i.depositAt > i.deadline && !i.inTime) {
     return [
       { status: "KNOWN_DEPOSIT_TX", at: at(1) },
       { status: "REFUNDED", at: at(3), refunded: deposited, refundReason: "DEPOSIT_AFTER_DEADLINE" },
@@ -195,4 +204,48 @@ export function planAdvance(i: AdvanceInput, to: AdvanceTarget): AdvancePlan {
     case "fail":
       return { ok: true, deposit: false, step: { status: "FAILED" } };
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Scenario groups (scenario 06 siblings; Stage 2 `scenario_group` / `scenario_kind`)
+// ---------------------------------------------------------------------------------------------
+
+export type ScenarioKind = "payment" | "refund";
+
+export interface GroupInput {
+  /** `SandboxQuoteRequest.scenario_group` (`pi_…` / `re_…`), absent on Stage 1 requests. */
+  readonly scenarioGroup?: string | null | undefined;
+  readonly scenarioKind: ScenarioKind;
+  readonly recipient: string;
+  readonly destinationAsset: string;
+  readonly refundTo: string;
+  /** `scenario_amount ?? amount`. */
+  readonly scenarioAmount: string;
+}
+
+/**
+ * Group key of a quote: quotes of one payment (or one refund) share it, and scenario `06` pays only the
+ * other open quotes of the same group. With `scenario_group` the group is exactly that payment or refund;
+ * without it the Stage 1 grouping applies (same recipient, destination asset, refund address and scenario
+ * amount), so Stage 1 callers keep their behaviour.
+ */
+export function groupKey(i: GroupInput): string {
+  const seed = i.scenarioGroup
+    ? `group|${i.scenarioKind}|${i.scenarioGroup}`
+    : [i.recipient, i.destinationAsset, i.refundTo, i.scenarioAmount].join("|");
+  return bytesToHex(sha256(utf8(seed)));
+}
+
+/**
+ * Which open quotes of the group a scenario `06` deposit also pays: a payment's **older** attempts (the payer
+ * paid a superseded attempt too, Stage 1), or **every other** open leg of a refund (the merchant paid an
+ * expired leg and its replacement; payments records the second as `duplicate`).
+ */
+export function duplicateTargets(kind: ScenarioKind): "older" | "others" {
+  return kind === "refund" ? "others" : "older";
+}
+
+/** A refund leg's duplicate deposit counts as made in time (it settles even if the leg's deadline passed). */
+export function duplicateInTime(kind: ScenarioKind): boolean {
+  return kind === "refund";
 }

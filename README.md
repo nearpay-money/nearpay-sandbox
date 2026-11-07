@@ -31,18 +31,18 @@ nearpay-sandbox/
 │   ├── main.ts               process entry: `api` | `migrate` | `healthcheck`
 │   ├── config.ts             NP_* configuration (secrets from files)
 │   ├── api/                  spec route bindings (every route: service token with `sandbox.use`, test mode only)
-│   ├── app/                  use cases: quotes, executions (deposits, timelines, status, materializer), service wiring
-│   ├── domain/               pure: fixed token registry, quote amounts (exact rationals)
-│   ├── scenarios/            pure: scenario keys 00–07, timelines, manual-advance plans
+│   ├── app/                  use cases: quotes, executions (deposits, timelines, status, materializer), Explorer mirror, service wiring
+│   ├── domain/               pure: fixed token registry, quote amounts (exact rationals), Explorer rows
+│   ├── scenarios/            pure: scenario keys 00–07, timelines, manual-advance plans, scenario groups
 │   ├── simulated-chains/     deterministic addresses and tx hashes, settlement payouts, chain txs, Verifier
 │   ├── test-helpers/         simulated deposits (`/sim/deposits`) and manual stepping (`/sim/advance`)
 │   └── infra/db/             Kysely schema, migrations path
-├── migrations/               plain SQL (kit tables first, then 0001_sandbox.sql)
+├── migrations/               plain SQL (kit tables first, then 0001_sandbox.sql, 0002_sandbox_stage2.sql)
 ├── test/
 │   ├── unit/ property/       pure code (Vitest, fast-check)
 │   ├── integration/          1Click mirror and Verifier over HTTP on real Postgres (Testcontainers)
-│   ├── scenario/             scenarios 00–07 end to end, manual control
-│   ├── contract/             spec route coverage, 1Click shape parity against a recorded mainnet quote
+│   ├── scenario/             scenarios 00–07 end to end, manual control, refund legs
+│   ├── contract/             spec route coverage, 1Click shape parity against recorded mainnet bodies
 │   └── fixtures/             recorded 1Click responses
 └── Dockerfile                distroless Node 22 image, `node dist/main.js <process>`
 ```
@@ -69,15 +69,17 @@ nearpay-sandbox/
 
 ## Behaviour
 
-- **1Click mirror** (`/v0/tokens`, `/v0/quote`, `/v0/status`, `/v0/deposit/submit`): same schemas as the rails 1Click adapter; quotes are signed with the 1Click construction (`quoteHash` of the 1Click SDK, Ed25519), so `verifyQuoteSignature(quote, sandboxKey)` verifies them. Rails sets `scenario_amount` (the pricing amount) to pick the scenario.
-- **Scenarios** (last two digits of `scenario_amount`): `00` success in ~5 s · `01` after 120 s · `02` underpaid → refunded at the deadline · `03` overpaid → success + excess refund · `04` failed after processing · `05` short by one base unit · `06` paying a newer attempt also settles older open ones · `07` success 5 min after the deadline. The outcome follows the deposit amount like 1Click `EXACT_OUTPUT` (below `minAmountIn` → refunded, above `amountIn` → excess refunded, after the deadline → refunded).
-- **Simulated chains**: settlements to Intents accounts credit the simulated Verifier ledger and emit `mt_transfer` (the rails sandbox indexer attributes them); chain settlements are simulated transactions read by `/sim/chains/{chain}/tx/{hash}`.
-- **Simulated Verifier** (`/sim/intents/*`): real NEP-413 / ERC-191 / raw ed25519 signature checks, nonces, balances, mainnet rejection messages; batches are atomic. Named accounts register the first key that signs for them.
+- **1Click mirror** (`/v0/tokens`, `/v0/quote`, `/v0/status`, `/v0/deposit/submit`): same schemas as the rails 1Click adapter, served in **live 1Click's shape** (spec 0.2.0; parity-tested against a recorded mainnet status body): unset optionals as `null` (`swapDetails.amountOut` before settlement, `appFees[].limitOrderId`, `virtualChainRecipient`), `refundedAmount` `"0"` until a refund, and `GET /v0/status` nests the quote response without `correlationId` and its request without `quoteWaitingTimeMs`. Quotes are signed with the 1Click construction (`quoteHash` of the 1Click SDK, Ed25519), so `verifyQuoteSignature(quote, sandboxKey)` verifies them. Rails sets `scenario_amount` (the pricing amount) to pick the scenario, and since Stage 2 `scenario_group` (`pi_…` / `re_…`) and `scenario_kind` (`payment` | `refund`); none of them are echoed.
+- **Scenarios** (last two digits of `scenario_amount`): `00` success in ~5 s · `01` after 120 s · `02` underpaid → refunded at the deadline · `03` overpaid → success + excess refund · `04` failed after processing · `05` short by one base unit · `06` duplicate settlement: paying a newer attempt also settles the older open ones of the same payment; on refund legs a deposit to one leg settles every other open leg of the same refund, even an expired one (payments records a `duplicate` leg) · `07` success 5 min after the deadline. The outcome follows the deposit amount like 1Click (below `minAmountIn` → refunded, above `amountIn` → excess refunded, after the deadline → refunded).
+- **Refund legs** (Stage 2): `EXACT_INPUT` (the merchant sends exactly the refund; the payer gets it less 20 bps) and `EXACT_OUTPUT` quotes without app fee; an `INTENTS`-deposit leg is funded by a Verifier transfer into its deposit address (a merchant-signed `execute` relayed by agentpay, or `/sim/intents/transfers`), which records the deposit and starts the scenario.
+- **Simulated chains**: settlements to Intents accounts credit the simulated Verifier ledger and emit `mt_transfer` (the rails sandbox indexer attributes them), so a merchant's settled test payments are its simulated Intents balance for refunds; chain settlements are simulated transactions read by `/sim/chains/{chain}/tx/{hash}`.
+- **Simulated Verifier** (`/sim/intents/*`): real NEP-413 / ERC-191 / raw ed25519 signature checks, nonces, balances, mainnet rejection messages; batches are atomic. Named accounts register the first key that signs for them. `POST /sim/intents/transfers` (Stage 2) executes an unsigned transfer (minting any shortfall first) with the same events as a signed one — payments' refund test helper.
+- **Explorer mirror** (Stage 2, `GET /api/v0/transactions`): the sandbox's quotes as Explorer rows, newest first, with the Explorer's filters (`referral`, `statuses`, time bounds, `search`, `depositMemo`) and cursor paging; `KNOWN_DEPOSIT_TX` reads `PROCESSING`, amounts read `0` until final. Rails runs its Explorer feed against it in test mode.
 - **Test mode only**: a principal in live mode gets `403 livemode_forbidden` (INV-8).
 
 ## Status
 
-Stage 1 (step 1.2) implemented: every sandbox route of `@nearpay-internal/spec` 0.1.1, scenarios 00–07, manual control, simulated chains and Verifier. Scenario `06` duplicate behaviour for refunds is Stage 2 (sandbox LLD §8).
+Stage 1 (step 1.2) implemented: every sandbox route of `@nearpay-internal/spec` 0.1.1, scenarios 00–07, manual control, simulated chains and Verifier. Stage 2 (step 2.2, spec 0.2.0): live 1Click body shape, refund legs (`scenario_group` / `scenario_kind`, scenario `06` for refunds, `INTENTS` deposits funded by Verifier transfers), `POST /sim/intents/transfers` and the Explorer mirror (sandbox LLD v1.4).
 
 ## Built with
 

@@ -13,7 +13,7 @@ import {
   materialize,
   notFound,
   originFamilyTx,
-  payOlderSiblings,
+  payDuplicateSiblings,
   recordDeposit,
 } from "../app/executions.js";
 import { scenarioDeposit } from "../domain/quote-math.js";
@@ -48,7 +48,7 @@ export async function simulateDeposit(
       { amount, txHash: originFamilyTx(row, `deposit:${row.deposit_key}`) },
       now,
     );
-    await payOlderSiblings(sb, tx, updated, now);
+    await payDuplicateSiblings(sb, tx, updated, now);
   });
 }
 

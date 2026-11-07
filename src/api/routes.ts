@@ -8,22 +8,31 @@ import { ApiError, implement, type RequestContext, type RouteBinding } from "@ne
 import {
   sandboxAdvance,
   sandboxExecuteIntents,
+  sandboxExplorerTransactions,
   sandboxFundIntents,
   sandboxGetTx,
   sandboxIntentsEvents,
   sandboxQuote,
   sandboxSimulateDeposit,
   sandboxSimulateIntents,
+  sandboxSimulateIntentsTransfer,
   sandboxStatus,
   sandboxSubmitDeposit,
   sandboxTokens,
 } from "@nearpay-internal/spec";
 import type { Sandbox } from "../app/context.js";
 import { getStatus, submitDeposit } from "../app/executions.js";
+import { explorerTransactions } from "../app/explorer.js";
 import { createQuote } from "../app/quotes.js";
 import { SANDBOX_TOKENS } from "../domain/tokens.js";
 import { getChainTx } from "../simulated-chains/chain-txs.js";
-import { executeIntents, fundIntents, intentsEvents, simulateIntents } from "../simulated-chains/verifier.js";
+import {
+  executeIntents,
+  fundIntents,
+  intentsEvents,
+  simulateIntents,
+  simulateTransfer,
+} from "../simulated-chains/verifier.js";
 import { advance, simulateDeposit } from "../test-helpers/control.js";
 
 /** INV-8: the sandbox serves test mode only. */
@@ -86,6 +95,15 @@ export function sandboxRoutes(sb: Sandbox): RouteBinding[] {
     implement(sandboxIntentsEvents, async (ctx) => {
       testModeOnly(ctx);
       return intentsEvents(sb, ctx.query.cursor, ctx.query.limit);
+    }),
+    // Stage 2
+    implement(sandboxSimulateIntentsTransfer, async (ctx) => {
+      testModeOnly(ctx);
+      return simulateTransfer(sb, ctx.body);
+    }),
+    implement(sandboxExplorerTransactions, async (ctx) => {
+      testModeOnly(ctx);
+      return explorerTransactions(sb, ctx.query);
     }),
   ];
 }

@@ -8,13 +8,16 @@
  * Live 1Click quirks mirrored here (mainnet, 2026-11-07; nearpay-brain reference/landscape.md §2):
  * - two deadlines: `quoteRequest.deadline` is the requested one (refunds begin), `quote.deadline` and
  *   `timeWhenInactive` are when the deposit address goes inactive, {@link ADDRESS_ACTIVE_MS} later;
- * - `appFees[]` items carry `limitOrderId: null`.
+ * - `appFees[]` items carry `limitOrderId: null`; unset `virtualChainRecipient` / `virtualChainRefundRecipient`
+ *   echo as `null` and an unset `confidentiality` as `public` (spec 0.2.0 accepts the nulls).
+ * Refund legs (Stage 2, `scenario_kind: refund`) quote `EXACT_INPUT` or `EXACT_OUTPUT` with no app fee; their
+ * `scenario_group` (`re_…`) groups the legs of one refund for scenario `06` (sandbox LLD §4).
  * The signature covers exactly what the SDK hashes, over the full request as received
  * (`quoteWaitingTimeMs` included): the SDK merges the quote over the request, so of the two deadlines
  * only `quote.deadline` is signed, as on live 1Click. `GET /v0/status` echoes the request without
  * `quoteWaitingTimeMs` (./executions.ts).
  */
-import { createHash, sign } from "node:crypto";
+import { sign } from "node:crypto";
 import { quoteHash } from "@defuse-protocol/one-click-sdk-typescript";
 import { NearAccountId } from "@nearpay/spec";
 import { validateAddress } from "@nearpay-internal/chains";
@@ -25,7 +28,7 @@ import type { OneClickQuoteResponse, SandboxQuoteRequest } from "@nearpay-intern
 import bs58 from "bs58";
 import { formatted, QuoteMathError, quoteAmounts, usdValue } from "../domain/quote-math.js";
 import { type SandboxToken, tokenById } from "../domain/tokens.js";
-import { scenarioOf } from "../scenarios/scenario.js";
+import { groupKey, scenarioOf } from "../scenarios/scenario.js";
 import { chainOf, depositAddress, depositMemo, intentsAccount } from "../simulated-chains/addresses.js";
 import { NEAR_CHAIN } from "../simulated-chains/settlement.js";
 import { dbNow, depositKey, type Sandbox } from "./context.js";
@@ -99,16 +102,29 @@ export function splitAppFees(
   return out;
 }
 
-/** The request as 1Click echoes it (the sandbox-only `scenario_amount` is not part of the quote), appFees split 50/50. */
+/**
+ * The request as 1Click echoes it, appFees split 50/50. The sandbox-only fields (`scenario_amount`,
+ * `scenario_group`, `scenario_kind`) are not part of the quote.
+ */
 function echoed(req: SandboxQuoteRequest): OneClickQuoteResponse["quoteRequest"] {
-  const { scenario_amount: _ignored, appFees, ...rest } = req;
+  const { scenario_amount: _a, scenario_group: _g, scenario_kind: _k, appFees, ...rest } = req;
   return { ...rest, ...(appFees ? { appFees: splitAppFees(appFees) } : {}) } as OneClickQuoteResponse["quoteRequest"];
 }
 
-/** {@link echoed} on the wire: each appFees item carries live 1Click's `limitOrderId: null`. */
-function echo(req: SandboxQuoteRequest): OneClickQuoteResponse["quoteRequest"] {
+/**
+ * {@link echoed} in live 1Click's shape (recorded mainnet status body, 2026-11-07; spec 0.2.0 accepts it):
+ * each appFees item carries `limitOrderId: null`, the unset virtual-chain recipients come back as `null`, and an
+ * unset `confidentiality` as its default `public`. The signature covers this echo (the SDK hashes the response).
+ */
+export function echo(req: SandboxQuoteRequest): OneClickQuoteResponse["quoteRequest"] {
   const e = echoed(req);
-  return e.appFees ? { ...e, appFees: e.appFees.map((f) => ({ limitOrderId: null, ...f })) } : e;
+  return {
+    ...e,
+    virtualChainRecipient: e.virtualChainRecipient ?? null,
+    virtualChainRefundRecipient: e.virtualChainRefundRecipient ?? null,
+    confidentiality: e.confidentiality ?? "public",
+    ...(e.appFees ? { appFees: e.appFees.map((f) => ({ limitOrderId: null, ...f })) } : {}),
+  };
 }
 
 export function signQuote(response: Omit<OneClickQuoteResponse, "signature">, key: Sandbox["signingKey"]): string {
@@ -202,9 +218,15 @@ export async function createQuote(sb: Sandbox, req: SandboxQuoteRequest): Promis
   const response: OneClickQuoteResponse = { ...unsigned, signature: signQuote(unsigned, sb.signingKey) };
 
   if (seq !== null && address) {
-    const groupKey = createHash("sha256")
-      .update([req.recipient, req.destinationAsset, req.refundTo, req.scenario_amount ?? req.amount].join("|"))
-      .digest("hex");
+    const kind = req.scenario_kind ?? "payment";
+    const group = groupKey({
+      scenarioGroup: req.scenario_group,
+      scenarioKind: kind,
+      recipient: req.recipient,
+      destinationAsset: req.destinationAsset,
+      refundTo: req.refundTo,
+      scenarioAmount: req.scenario_amount ?? req.amount,
+    });
     await sb.db
       .insertInto("sim_quotes")
       .values({
@@ -216,7 +238,9 @@ export async function createQuote(sb: Sandbox, req: SandboxQuoteRequest): Promis
         request: JSON.stringify(req),
         response: JSON.stringify(response),
         scenario,
-        group_key: groupKey,
+        group_key: group,
+        scenario_group: req.scenario_group ?? null,
+        scenario_kind: kind,
         origin_chain: req.depositType === "INTENTS" ? NEAR_CHAIN : originChain.caip2,
         destination_chain: destChain,
         amount_in: amounts.amountIn.toString(),
@@ -226,7 +250,10 @@ export async function createQuote(sb: Sandbox, req: SandboxQuoteRequest): Promis
         state: "PENDING_DEPOSIT",
       })
       .execute();
-    sb.log.info({ scenario, deposit: address, origin: req.originAsset }, "sandbox quote issued");
+    sb.log.info(
+      { scenario, kind, group: req.scenario_group, deposit: address, origin: req.originAsset },
+      "sandbox quote issued",
+    );
   }
   return response;
 }

@@ -1,4 +1,4 @@
-/** Kysely table types of the sandbox database (migrations/0001_sandbox.sql). */
+/** Kysely table types of the sandbox database (migrations/0001_sandbox.sql, 0002_sandbox_stage2.sql). */
 import type { ColumnType, Generated, KitTables } from "@nearpay-internal/db";
 
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
@@ -27,6 +27,9 @@ export interface SimQuotesTable {
   response: Json<Record<string, unknown>>;
   scenario: string;
   group_key: string;
+  /** Stage 2 (0002): `pi_…`/`re_…` as rails sent it; null on Stage 1 rows and plain 1Click requests. */
+  scenario_group: string | null;
+  scenario_kind: ColumnType<"payment" | "refund", "payment" | "refund" | undefined, "payment" | "refund">;
   origin_chain: string;
   destination_chain: string;
   amount_in: Numeric;
