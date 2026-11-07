@@ -21,6 +21,7 @@ import { ApiError } from "@nearpay-internal/service";
 import { sha256 } from "@noble/hashes/sha2.js";
 import bs58 from "bs58";
 import { dbNow, nextBlock, type Sandbox, type Tx } from "../app/context.js";
+import { attributeIntentsDeposits } from "../app/executions.js";
 import { txHash } from "./addresses.js";
 import {
   appendEvents,
@@ -282,6 +283,13 @@ export async function executeIntents(sb: Sandbox, signed: readonly unknown[]): P
         intents_executed: [],
       };
     }
+    // Transfers into INTENTS deposit addresses are those quotes' deposits (quote rows locked before balances).
+    const credits = checked.flatMap((c) =>
+      c.transfers.flatMap((t) =>
+        t.tokens.map(([token, amount]) => ({ from: t.from, to: t.to, token, amount: BigInt(amount), memo: t.memo })),
+      ),
+    );
+    const deposits = await attributeIntentsDeposits(sb, tx, credits, hash, now);
     for (const c of checked) {
       for (const t of c.transfers) {
         for (const [token, amount] of t.tokens) {
@@ -298,7 +306,7 @@ export async function executeIntents(sb: Sandbox, signed: readonly unknown[]): P
           .execute();
     }
     await appendEvents(tx, hash, block, logsOf(checked));
-    sb.log.info({ tx: hash, payloads: checked.length }, "sandbox execute_intents");
+    sb.log.info({ tx: hash, payloads: checked.length, deposits }, "sandbox execute_intents");
     return {
       tx_hash: hash,
       block_height: Number(block),
@@ -339,4 +347,60 @@ export async function intentsEvents(sb: Sandbox, cursor: number, limit: number) 
     log: r.log,
   }));
   return { events, next_cursor: events.length ? (events[events.length - 1] as { seq: number }).seq : cursor };
+}
+
+/**
+ * `POST /sim/intents/transfers` (Stage 2, payments' refund test helper): an executed transfer without a
+ * signature. Credits `from` with any shortfall first (an `mt_mint`, like `/sim/intents/fund`), then moves `amount`
+ * to `to` and emits what a signed execute emits — NEP-245 `mt_transfer` (no memo), DIP-4 `transfer` (with the memo,
+ * the leg binding) and `intents_executed` (synthetic intent hash and nonce). A transfer into an INTENTS deposit
+ * address is that quote's deposit (refund route legs), exactly as with a signed execute. Serialised with executes
+ * (the Verifier lock), one transaction.
+ */
+export async function simulateTransfer(
+  sb: Sandbox,
+  b: { from: string; to: string; token: string; amount: string; memo?: string | undefined },
+): Promise<{ tx_hash: string; block_height: number }> {
+  const amount = BigInt(b.amount);
+  if (amount <= 0n) throw ApiError.invalid("amount must be positive", "amount");
+  if (b.from === b.to) throw ApiError.invalid("from and to must be different accounts", "to");
+  return withTx(sb.db, async (tx) => {
+    await sql`select pg_advisory_xact_lock(hashtext(${LOCK}))`.execute(tx);
+    const now = await dbNow(tx);
+    const block = await nextBlock(tx);
+    const hash = txHash("near", `transfer:${block}`);
+    const deposits = await attributeIntentsDeposits(
+      sb,
+      tx,
+      [{ from: b.from, to: b.to, token: b.token, amount, memo: b.memo }],
+      hash,
+      now,
+    );
+    const logs: string[] = [];
+    const shortfall = amount - (await balanceOf(tx, b.from, b.token));
+    if (shortfall > 0n) {
+      await credit(tx, b.from, b.token, shortfall);
+      logs.push(mtMintLog(b.from, b.token, shortfall.toString(), "sandbox deposit"));
+    }
+    await debit(tx, b.from, b.token, amount);
+    await credit(tx, b.to, b.token, amount);
+    const intent = bs58.encode(sha256(enc.encode(`sandbox transfer:${hash}`)));
+    const nonce = Buffer.from(sha256(enc.encode(`sandbox nonce:${hash}`))).toString("base64");
+    logs.push(
+      mtTransferLog({ from: b.from, to: b.to, tokens: [[b.token, amount.toString()]] }),
+      eventLog("dip4", DIP4_VERSION, "transfer", [
+        {
+          intent_hash: intent,
+          account_id: b.from,
+          receiver_id: b.to,
+          tokens: { [b.token]: amount.toString() },
+          ...(b.memo !== undefined ? { memo: b.memo } : {}),
+        },
+      ]),
+      eventLog("dip4", DIP4_VERSION, "intents_executed", [{ intent_hash: intent, account_id: b.from, nonce }]),
+    );
+    await appendEvents(tx, hash, block, logs);
+    sb.log.info({ tx: hash, from: b.from, to: b.to, minted: shortfall > 0n, deposits }, "sandbox simulated transfer");
+    return { tx_hash: hash, block_height: Number(block) };
+  });
 }
