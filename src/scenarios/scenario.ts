@@ -18,7 +18,9 @@
  *
  * The outcome follows the deposit, as with 1Click EXACT_OUTPUT: below `minAmountIn` the deposit is
  * refunded at the deadline (`PARTIAL_DEPOSIT`), above `amountIn` the excess is refunded with the
- * success, after `timeWhenInactive` it is refunded. Offsets scale with NP_SANDBOX_TIME_SCALE.
+ * success, after the deadline it is refunded. "The deadline" is always the requested one
+ * (`quoteRequest.deadline`, when refunds begin), never `quote.deadline`/`timeWhenInactive` (3 days later, as on
+ * live 1Click). Offsets scale with NP_SANDBOX_TIME_SCALE.
  */
 
 export const SCENARIOS = ["00", "01", "02", "03", "04", "05", "06", "07"] as const;
