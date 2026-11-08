@@ -19,6 +19,7 @@ import {
 import { OneClickQuoteResponse, OneClickStatusResponse, type SandboxQuoteRequest, SimTx } from "@nearpay-internal/spec";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { solverAddress } from "../../src/simulated-chains/addresses.js";
 import { PAYER, quoteRequest, USDC_ARB, USDC_BASE, USDC_NEAR } from "../support/requests.js";
 import { mintTestToken, type Stack, startStack } from "../support/stack.js";
 
@@ -137,12 +138,12 @@ describe("refund route legs", () => {
     ]);
     const payout = st.swapDetails.destinationChainTxHashes[0]?.hash as string;
     expect((await chainTx("eip155:42161", payout)).transfers).toEqual([
-      { token: USDC_ARB, to: PAYER, amount: "998000" },
+      { token: USDC_ARB, from: solverAddress("eip155:42161"), to: PAYER, amount: "998000" },
     ]);
     // the merchant's deposit is a simulated Base transaction
     const dep = st.swapDetails.originChainTxHashes[0]?.hash as string;
     expect((await chainTx("eip155:8453", dep)).transfers).toEqual([
-      { token: USDC_BASE, to: addr(q), amount: "1000000" },
+      { token: USDC_BASE, from: MERCHANT_EVM, to: addr(q), amount: "1000000" },
     ]);
   });
 
@@ -199,6 +200,10 @@ describe("Intents-account refunds (INTENTS deposit route legs)", () => {
     const ex = exec.body as { status: string; tx_hash: string };
     expect(ex.status).toBe("success");
     expect(await balance(merchant)).toBe(1_000_000n);
+    // the Intents deposit is sent by the signer of the Verifier transfer (spec 0.3.1 `from`)
+    expect((await chainTx("near:mainnet", ex.tx_hash)).transfers).toEqual([
+      { token: USDC_NEAR, from: merchant, to: addr(q), amount: "2000000" },
+    ]);
 
     const pending = await status(q);
     expect(pending.swapDetails.depositedAmount).toBe("2000000");
@@ -207,7 +212,7 @@ describe("Intents-account refunds (INTENTS deposit route legs)", () => {
     expect([st.status, st.swapDetails.amountOut]).toEqual(["SUCCESS", "1996000"]);
     const payout = st.swapDetails.destinationChainTxHashes[0]?.hash as string;
     expect((await chainTx("eip155:42161", payout)).transfers).toEqual([
-      { token: USDC_ARB, to: PAYER, amount: "1996000" },
+      { token: USDC_ARB, from: solverAddress("eip155:42161"), to: PAYER, amount: "1996000" },
     ]);
     // rails' indexer sees the binding on the DIP-4 transfer, not on the NEP-245 mt_transfer
     const logs = await logsOf(ex.tx_hash);

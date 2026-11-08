@@ -23,7 +23,7 @@ import {
   type Step,
   timeline,
 } from "../scenarios/scenario.js";
-import { txHash } from "../simulated-chains/addresses.js";
+import { simulatedPayer, txHash } from "../simulated-chains/addresses.js";
 import { NEAR_CHAIN, payout, recordTx } from "../simulated-chains/settlement.js";
 import { dbNow, depositKey, type Sandbox, type Tx } from "./context.js";
 
@@ -185,6 +185,18 @@ interface DepositInput {
   txHash: string;
   /** Counts as made before the deadline (a refund leg's scenario `06` duplicate). */
   inTime?: boolean;
+  /** Sender, when known (Intents transfers name it); otherwise `depositSender`. */
+  from?: string;
+}
+
+/**
+ * Who sent a simulated deposit (spec 0.3.1 `SimTx.transfers[].from`): the payer's refund address when it is on the
+ * deposit chain (the wallet that pays is the one refunds return to), otherwise the documented simulated payer of
+ * that chain (sandbox LLD §4.1).
+ */
+export function depositSender(r: { refundTo: string; refundType: string }, originChain: string): string {
+  const refundChain = r.refundType === "INTENTS" ? NEAR_CHAIN : originChain;
+  return refundChain === originChain ? r.refundTo : simulatedPayer(originChain);
 }
 
 /** Records a deposit and starts its timeline (or, in manual mode, only moves to KNOWN_DEPOSIT_TX). */
@@ -193,7 +205,14 @@ export async function recordDeposit(sb: Sandbox, tx: Tx, row: QuoteRow, d: Depos
   await recordTx(tx, {
     hash: d.txHash,
     chain: row.origin_chain,
-    transfers: [{ token: r.originAsset, to: row.deposit_address, amount: d.amount.toString() }],
+    transfers: [
+      {
+        token: r.originAsset,
+        from: d.from ?? depositSender(r, row.origin_chain),
+        to: row.deposit_address,
+        amount: d.amount.toString(),
+      },
+    ],
     now,
     finalizeAfterMs: 0,
   });
@@ -317,7 +336,7 @@ export async function attributeIntentsDeposits(
       );
       continue;
     }
-    const updated = await recordDeposit(sb, tx, row, { amount: c.amount, txHash }, now);
+    const updated = await recordDeposit(sb, tx, row, { amount: c.amount, txHash, from: c.from }, now);
     byKey.set(row.deposit_key, updated);
     await payDuplicateSiblings(sb, tx, updated, now);
     n++;
