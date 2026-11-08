@@ -1,7 +1,18 @@
 import { CHAINS, validateAddress } from "@nearpay-internal/chains";
 import { describe, expect, it } from "vitest";
+import { depositSender } from "../../src/app/executions.js";
 import { SANDBOX_TOKENS } from "../../src/domain/tokens.js";
-import { chainOf, depositAddress, depositMemo, intentsAccount, txHash } from "../../src/simulated-chains/addresses.js";
+import {
+  chainOf,
+  depositAddress,
+  depositMemo,
+  intentsAccount,
+  SIMULATED_PAYER,
+  SOLVER_ACCOUNT,
+  simulatedPayer,
+  solverAddress,
+  txHash,
+} from "../../src/simulated-chains/addresses.js";
 
 describe("deterministic addresses", () => {
   it("issues valid addresses in every sandbox chain's format", () => {
@@ -40,5 +51,33 @@ describe("deterministic addresses", () => {
     expect(CHAINS.map((c) => c.blockchain)).toEqual(
       expect.arrayContaining(["near", "base", "arb", "eth", "sol", "btc"]),
     );
+  });
+});
+
+describe("transfer senders (spec 0.3.1 SimTx.transfers[].from, sandbox LLD §4.1)", () => {
+  it("the simulated payer and liquidity provider have valid addresses on every sandbox chain", () => {
+    for (const t of SANDBOX_TOKENS) {
+      const c = chainOf(t.blockchain);
+      expect(validateAddress(c.caip2, simulatedPayer(c.caip2)), `payer ${c.caip2}`).toMatchObject({ ok: true });
+      expect(validateAddress(c.caip2, solverAddress(c.caip2)), `solver ${c.caip2}`).toMatchObject({ ok: true });
+    }
+  });
+
+  it("documents payments' test refund addresses as the simulated payer", () => {
+    expect(SIMULATED_PAYER).toEqual({
+      evm: "0x000000000000000000000000000000000000dEaD",
+      near: "sandbox-payer.near",
+      solana: "11111111111111111111111111111111",
+      bitcoin: "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+    });
+    expect(solverAddress("near:mainnet")).toBe(SOLVER_ACCOUNT);
+  });
+
+  it("a deposit is sent by the refund address when it is on the deposit chain, else by the simulated payer", () => {
+    const base = "eip155:8453";
+    expect(depositSender({ refundTo: "0xabc", refundType: "ORIGIN_CHAIN" }, base)).toBe("0xabc");
+    expect(depositSender({ refundTo: "payer.near", refundType: "INTENTS" }, base)).toBe(SIMULATED_PAYER.evm);
+    expect(depositSender({ refundTo: "payer.near", refundType: "INTENTS" }, "near:mainnet")).toBe("payer.near");
+    expect(depositSender({ refundTo: "payer.near", refundType: "ORIGIN_CHAIN" }, "near:mainnet")).toBe("payer.near");
   });
 });

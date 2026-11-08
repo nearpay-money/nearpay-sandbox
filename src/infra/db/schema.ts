@@ -56,6 +56,8 @@ export interface SimQuotesTable {
 
 export type SimTransfer = {
   token: string;
+  /** Sender (spec 0.3.1 `SimTx.transfers[].from`); absent on rows written before it. */
+  from?: string;
   to: string;
   amount: string;
 };

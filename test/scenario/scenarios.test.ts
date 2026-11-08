@@ -7,6 +7,7 @@ import { sql } from "@nearpay-internal/db";
 import { mtTransfers } from "@nearpay-internal/intents";
 import { OneClickQuoteResponse, OneClickStatusResponse, SimTx } from "@nearpay-internal/spec";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { solverAddress } from "../../src/simulated-chains/addresses.js";
 import { MERCHANT, PAYER, quoteRequest, USDC_ARB, USDC_NEAR } from "../support/requests.js";
 import { type Stack, startStack } from "../support/stack.js";
 
@@ -75,7 +76,7 @@ describe("scenario 00 (happy path)", () => {
     const dest = st.swapDetails.destinationChainTxHashes[0]?.hash as string;
     expect(st.swapDetails.nearTxHashes).toContain(dest);
     expect((await chainTx("near:mainnet", dest)).transfers).toEqual([
-      { token: USDC_NEAR, to: MERCHANT, amount: "2000017" },
+      { token: USDC_NEAR, from: "sbx-solver.near", to: MERCHANT, amount: "2000017" },
     ]);
     const logs = (await events()).filter((e) => e.tx_hash === dest).map((e) => e.log);
     expect(mtTransfers(logs)).toEqual([
@@ -102,7 +103,12 @@ describe("scenario 00 (happy path)", () => {
     expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(st.swapDetails.destinationChainTxHashes[0]?.explorerUrl).toBe(`https://arbiscan.io/tx/${hash}`);
     const tx = await chainTx("eip155:42161", hash);
-    expect(tx.transfers).toEqual([{ token: USDC_ARB, to: PAYER, amount: "2000017" }]);
+    expect(tx.transfers).toEqual([
+      { token: USDC_ARB, from: solverAddress("eip155:42161"), to: PAYER, amount: "2000017" },
+    ]);
+    // the payer's deposit is sent from its refund address on the origin chain (spec 0.3.1 `from`)
+    const dep = st.swapDetails.originChainTxHashes[0]?.hash as string;
+    expect((await chainTx("eip155:8453", dep)).transfers[0]?.from).toBe(PAYER);
     await new Promise((r) => setTimeout(r, 40)); // finality after 2 s × 0.01
     expect((await chainTx("eip155:42161", hash)).finalized).toBe(true);
     expect(st.swapDetails.nearTxHashes).toEqual([]);
@@ -153,7 +159,12 @@ describe("scenarios 01–07", () => {
       }>`select refund_tx_hashes from sim_quotes where deposit_address = ${addr(q)}`.execute(s.database.db)
     ).rows[0]?.refund_tx_hashes[0] as string;
     expect((await chainTx("eip155:8453", refund)).transfers).toEqual([
-      { token: q.quoteRequest.originAsset, to: PAYER, amount: deposited.toString() },
+      {
+        token: q.quoteRequest.originAsset,
+        from: solverAddress("eip155:8453"),
+        to: PAYER,
+        amount: deposited.toString(),
+      },
     ]);
   });
 

@@ -10,7 +10,7 @@ import type { Tx } from "../app/context.js";
 export const DIP4_VERSION = "0.4.3";
 export const NEP245_VERSION = "1.0.0";
 /** Liquidity provider of simulated swaps into Intents accounts (never debited). */
-export const SOLVER_ACCOUNT = "sbx-solver.near";
+export { SOLVER_ACCOUNT } from "./addresses.js";
 
 export function eventLog(standard: string, version: string, event: string, data: unknown): string {
   return `EVENT_JSON:${JSON.stringify({ standard, version, event, data })}`;

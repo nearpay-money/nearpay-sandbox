@@ -9,7 +9,7 @@ import { type ChainFamily, getChain } from "@nearpay-internal/chains";
 import type { Tx } from "../app/context.js";
 import { nextBlock } from "../app/context.js";
 import type { SimTransfer } from "../infra/db/schema.js";
-import { txHash } from "./addresses.js";
+import { solverAddress, txHash } from "./addresses.js";
 import { appendEvents, credit, DIP4_VERSION, eventLog, mtTransferLog, SOLVER_ACCOUNT } from "./intents-ledger.js";
 
 export const NEAR_CHAIN = "near:mainnet";
@@ -55,7 +55,11 @@ export interface PayoutResult {
   readonly nearTx: boolean;
 }
 
-/** Pays `amount` of `token` to `to` from the simulated liquidity provider. */
+/**
+ * Pays `amount` of `token` to `to` from the simulated liquidity provider: the transfer's `from` is `SOLVER_ACCOUNT`
+ * for Intents credits (the `mt_transfer` `old_owner_id` the rails indexer reads) and the provider's address on the
+ * chain otherwise (`solverAddress`).
+ */
 export async function payout(tx: Tx, p: Payout, now: Date, timeScale: number): Promise<PayoutResult> {
   const finalizeAfterMs = Math.round(2_000 * timeScale);
   if (p.kind === "intents") {
@@ -71,7 +75,7 @@ export async function payout(tx: Tx, p: Payout, now: Date, timeScale: number): P
     await recordTx(tx, {
       hash,
       chain: NEAR_CHAIN,
-      transfers: [{ token: p.token, to: p.to, amount: p.amount.toString() }],
+      transfers: [{ token: p.token, from: SOLVER_ACCOUNT, to: p.to, amount: p.amount.toString() }],
       now,
       finalizeAfterMs,
     });
@@ -81,7 +85,7 @@ export async function payout(tx: Tx, p: Payout, now: Date, timeScale: number): P
   await recordTx(tx, {
     hash,
     chain: p.chain,
-    transfers: [{ token: p.token, to: p.to, amount: p.amount.toString() }],
+    transfers: [{ token: p.token, from: solverAddress(p.chain), to: p.to, amount: p.amount.toString() }],
     now,
     finalizeAfterMs,
   });

@@ -4,7 +4,7 @@
  * (P2WPKH) for Bitcoin. Every value is valid for `@nearpay-internal/chains` address validation, so
  * rails and checkout treat sandbox output exactly like provider output.
  */
-import { type ChainFamily, type ChainInfo, chainByBlockchain } from "@nearpay-internal/chains";
+import { type ChainFamily, type ChainInfo, chainByBlockchain, getChain } from "@nearpay-internal/chains";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bech32 } from "@scure/base";
@@ -63,4 +63,40 @@ export function txHash(family: ChainFamily, seed: string): string {
     case "bitcoin":
       return hex(s);
   }
+}
+
+/**
+ * Documented test addresses of the simulated payer (sandbox LLD §4.1; the refund addresses payments' test helper
+ * sends, payments LLD §21.5). The sandbox names this payer as the sender (`SimTx.transfers[].from`) of a deposit
+ * whose refund address is not on the deposit chain.
+ */
+export const SIMULATED_PAYER: Readonly<Record<ChainFamily, string>> = {
+  evm: "0x000000000000000000000000000000000000dEaD",
+  near: "sandbox-payer.near",
+  solana: "11111111111111111111111111111111",
+  bitcoin: "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+};
+
+/** NEAR account of the simulated liquidity provider: sender of every simulated payout and refund on NEAR. */
+export const SOLVER_ACCOUNT = "sbx-solver.near";
+
+function chainInfo(chain: string): ChainInfo {
+  const c = getChain(chain);
+  if (!c) throw new RangeError(`unknown chain ${chain}`);
+  return c;
+}
+
+/** The simulated payer's address on `chain` (bitcoin chains with another HRP get a derived address). */
+export function simulatedPayer(chain: string): string {
+  const c = chainInfo(chain);
+  const hrp = c.btc?.hrp ?? "bc";
+  if (c.family === "bitcoin" && hrp !== "bc") return depositAddress("bitcoin", "sandbox-payer", hrp);
+  return SIMULATED_PAYER[c.family];
+}
+
+/** The simulated liquidity provider's address on `chain`: sender of the payouts and refunds the sandbox makes. */
+export function solverAddress(chain: string): string {
+  const c = chainInfo(chain);
+  if (c.family === "near") return SOLVER_ACCOUNT;
+  return depositAddress(c.family, "sbx-solver", c.btc?.hrp ?? "bc");
 }
