@@ -5,10 +5,13 @@ import { createDb, type Database, migrationStatus, sql } from "@nearpay-internal
 import { type BackgroundTask, createService, type Service } from "@nearpay-internal/service";
 import { sandboxRoutes } from "../api/routes.js";
 import type { Config } from "../config.js";
+import { VaultContract } from "../domain/vault/contract.js";
+import { checkConfig } from "../domain/vault/state.js";
 import { MIGRATIONS_DIR } from "../infra/db/migrations.js";
 import type { DB } from "../infra/db/schema.js";
 import type { Sandbox } from "./context.js";
 import { materializeDue } from "./executions.js";
+import { vaultConfigFrom } from "./vault.js";
 
 export interface SandboxServiceOptions {
   config: Config;
@@ -53,12 +56,15 @@ function materializer(sb: Sandbox, tickMs: number): BackgroundTask {
 }
 
 export function createSandboxService(o: SandboxServiceOptions): { service: Service; sandbox: Sandbox } {
+  const vaultConfig = vaultConfigFrom(o.config);
+  if (checkConfig(vaultConfig)) throw new Error("vault stand-in configuration is invalid (ERR_BAD_CONFIG)");
   const database = o.database ?? createDb<DB>({ url: o.config.dbUrl, applicationName: "sandbox-api" });
   // The bootstrap creates the logger, so the context gets it right after the service exists.
   const sb: { -readonly [K in keyof Sandbox]: Sandbox[K] } = {
     db: database.db,
     signingKey: createPrivateKey(o.config.sandboxSigningKey),
     timeScale: o.config.sandboxTimeScale,
+    vault: new VaultContract(vaultConfig),
     log: undefined as unknown as Sandbox["log"],
   };
   const service = createService({

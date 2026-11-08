@@ -71,3 +71,39 @@ export async function appendEvents(tx: Tx, txHash: string, block: bigint, logs: 
     .values(logs.map((log) => ({ tx_hash: txHash, block_height: block.toString(), log })))
     .execute();
 }
+
+/** A feed line with its receipt context (Stage 4: vault stand-in receipts, rails §8.6 rules). */
+export interface ReceiptLine {
+  readonly log: string;
+  readonly receipt_id: string;
+  readonly log_index: number;
+  readonly executor_id: string;
+}
+
+/**
+ * Appends receipt lines of one transaction. Positions in the feed are assigned at commit (migration 0003), so the
+ * feed never exposes a later line before an earlier one has committed.
+ */
+export async function appendReceiptLines(
+  tx: Tx,
+  t: { txHash: string; block: bigint; blockHash: string; blockTimestampNs: bigint },
+  lines: readonly ReceiptLine[],
+): Promise<void> {
+  if (lines.length === 0) return;
+  await tx
+    .insertInto("sim_intents_events")
+    .values(
+      lines.map((l) => ({
+        tx_hash: t.txHash,
+        block_height: t.block.toString(),
+        log: l.log,
+        receipt_id: l.receipt_id,
+        log_index: l.log_index,
+        executor_id: l.executor_id,
+        block_hash: t.blockHash,
+        block_timestamp: t.blockTimestampNs.toString(),
+        receipt_status: "success" as const,
+      })),
+    )
+    .execute();
+}

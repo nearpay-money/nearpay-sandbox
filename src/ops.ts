@@ -5,7 +5,9 @@
 import { createPrivateKey } from "node:crypto";
 import { createDb } from "@nearpay-internal/db";
 import { ConfigError, createLogger } from "@nearpay-internal/service";
+import { vaultConfigFrom } from "./app/vault.js";
 import { readConfig } from "./config.js";
+import { VaultContract } from "./domain/vault/contract.js";
 import type { DB } from "./infra/db/schema.js";
 import { runOps } from "./ops/cli.js";
 
@@ -24,6 +26,7 @@ try {
       db: database.db,
       signingKey: createPrivateKey(config.sandboxSigningKey),
       timeScale: config.sandboxTimeScale,
+      vault: new VaultContract(vaultConfigFrom(config)),
       log,
     });
   } finally {

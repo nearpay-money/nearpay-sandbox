@@ -331,20 +331,41 @@ export async function fundIntents(sb: Sandbox, b: { account_id: string; token: s
   });
 }
 
-/** `GET /sim/intents/events`: the simulated indexer feed, in order. */
+/**
+ * `GET /sim/intents/events`: the simulated indexer feed, in commit order. `seq` is the commit-ordered position
+ * (migration 0003), so a cursor never skips a line that committed late. Lines of vault stand-in receipts carry their
+ * receipt context (Stage 4); Verifier lines keep the Stage 1 shape (absent executor = `intents.near`).
+ */
 export async function intentsEvents(sb: Sandbox, cursor: number, limit: number) {
   const rows = await sb.db
     .selectFrom("sim_intents_events")
-    .select(["seq", "tx_hash", "block_height", "log"])
-    .where("seq", ">", BigInt(cursor))
-    .orderBy("seq")
+    .select([
+      "pos",
+      "tx_hash",
+      "block_height",
+      "log",
+      "receipt_id",
+      "log_index",
+      "executor_id",
+      "block_hash",
+      "block_timestamp",
+      "receipt_status",
+    ])
+    .where("pos", ">", BigInt(cursor) as never)
+    .orderBy("pos")
     .limit(limit)
     .execute();
   const events = rows.map((r) => ({
-    seq: Number(r.seq),
+    seq: Number(r.pos),
     tx_hash: r.tx_hash,
     block_height: Number(r.block_height),
     log: r.log,
+    ...(r.receipt_id !== null ? { receipt_id: r.receipt_id } : {}),
+    ...(r.log_index !== null ? { log_index: r.log_index } : {}),
+    ...(r.executor_id !== null ? { executor_id: r.executor_id } : {}),
+    ...(r.block_hash !== null ? { block_hash: r.block_hash } : {}),
+    ...(r.block_timestamp !== null ? { block_timestamp: r.block_timestamp } : {}),
+    ...(r.receipt_status !== null ? { receipt_status: r.receipt_status } : {}),
   }));
   return { events, next_cursor: events.length ? (events[events.length - 1] as { seq: number }).seq : cursor };
 }

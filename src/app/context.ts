@@ -3,6 +3,7 @@ import type { KeyObject } from "node:crypto";
 import type { Kysely, Transaction } from "@nearpay-internal/db";
 import { sql } from "@nearpay-internal/db";
 import type { Logger } from "@nearpay-internal/service";
+import type { VaultContract } from "../domain/vault/contract.js";
 import type { DB } from "../infra/db/schema.js";
 
 export interface Sandbox {
@@ -12,6 +13,8 @@ export interface Sandbox {
   /** Multiplies every timeline offset. */
   readonly timeScale: number;
   readonly log: Logger;
+  /** The subscription-vault stand-in (Stage 4, sandbox LLD §3.1). */
+  readonly vault: VaultContract;
 }
 
 export type Tx = Transaction<DB>;

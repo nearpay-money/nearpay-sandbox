@@ -34,12 +34,16 @@ afterAll(async () => {
 });
 
 describe("route coverage", () => {
-  it("binds every sandbox route of @nearpay-internal/spec (Stage 1 and Stage 2)", () => {
+  it("binds every sandbox route of @nearpay-internal/spec (Stage 1, 2 and the Stage 4 stand-in routes)", () => {
     const bindings = sandboxRoutes({} as never);
-    expect(unimplementedRoutes("sandbox", INTERNAL_ROUTES, bindings).map((r) => r.id)).toEqual([]);
-    expect(bindings).toHaveLength(INTERNAL_ROUTES.filter((r) => r.service === "sandbox").length);
+    expect(unimplementedRoutes("sandbox", INTERNAL_ROUTES, bindings, 4).map((r) => r.id)).toEqual([]);
+    // Phase A: the four Stage 4 routes come from the spec 0.4.0 placeholder (src/spec-0.4-gap.ts) until 0.4.0 is
+    // published; then they are part of INTERNAL_ROUTES and this count is exact again.
+    const stage4 = ["sandboxNearRpc", "sandboxVaultFtTransferCall", "sandboxVaultCall", "sandboxVaultAdvance"];
+    const inSpec = INTERNAL_ROUTES.filter((r) => r.service === "sandbox").map((r) => r.id);
+    expect(bindings).toHaveLength(inSpec.length + stage4.filter((id) => !inSpec.includes(id)).length);
     expect(bindings.map((b) => b.route.id)).toEqual(
-      expect.arrayContaining(["sandboxSimulateIntentsTransfer", "sandboxExplorerTransactions"]),
+      expect.arrayContaining(["sandboxSimulateIntentsTransfer", "sandboxExplorerTransactions", ...stage4]),
     );
   });
 });
