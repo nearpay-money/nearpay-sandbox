@@ -1,8 +1,9 @@
 /**
  * Fixed token registry of the sandbox (sandbox LLD §3 `GET /v0/tokens`): the real NEAR Intents
  * asset ids of USDC, USDT, ETH, wNEAR, SOL and BTC on NEAR, Base, Arbitrum, Ethereum, Solana and
- * Bitcoin (taken from 1Click `GET /v0/tokens`, 2026-11-05), with fixed USD prices so every quote is
- * deterministic.
+ * Bitcoin (taken from 1Click `GET /v0/tokens`, 2026-11-05; Solana USDT from the spec 0.4.0 chain vectors,
+ * sandbox LLD §10), with fixed USD prices so every quote is deterministic. Every `sol-` asset id satisfies
+ * the SPL rule `nep141:sol-<hex(keccak256(mint)[12..32])>.omft.near`.
  */
 
 export interface SandboxToken {
@@ -101,6 +102,15 @@ export const SANDBOX_TOKENS: readonly SandboxToken[] = Object.freeze([
     "nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near",
     "usd-coin",
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  ),
+  t(
+    "sol",
+    "USDT",
+    6,
+    PRICES.USD,
+    "nep141:sol-c800a4bd850783ccb82c2b2c7e84175443606352.omft.near",
+    "tether",
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
   ),
   t("sol", "SOL", 9, PRICES.SOL, "nep141:sol.omft.near", "solana"),
   // Bitcoin

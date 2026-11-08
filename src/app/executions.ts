@@ -91,12 +91,14 @@ export async function applyStep(
         to: r.recipient,
         amount: BigInt(step.delivered),
         seed: `settle:${row.deposit_key}`,
+        scenario: row.scenario,
+        leg: "payout",
       },
       now,
       sb.timeScale,
     );
-    dest.push(out.hash);
-    if (out.nearTx) near.push(out.hash);
+    dest.push(...out.hashes);
+    if (out.nearTx) near.push(...out.hashes);
     patch.delivered_amount = step.delivered;
   }
   if ((step.status === "SUCCESS" || step.status === "REFUNDED") && step.refunded && BigInt(step.refunded) > 0n) {
@@ -109,12 +111,14 @@ export async function applyStep(
         to: r.refundTo,
         amount: BigInt(step.refunded),
         seed: `refund:${row.deposit_key}:${step.status}`,
+        scenario: row.scenario,
+        leg: "refund",
       },
       now,
       sb.timeScale,
     );
-    refunds.push(out.hash);
-    if (out.nearTx) near.push(out.hash);
+    refunds.push(...out.hashes);
+    if (out.nearTx) near.push(...out.hashes);
   }
   if (step.refunded !== undefined) patch.refunded_amount = step.refunded;
   if (step.refundReason) patch.refund_reason = step.refundReason;

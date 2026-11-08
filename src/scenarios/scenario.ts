@@ -16,6 +16,9 @@
  * | 06  | like 00; a deposit also pays the older open quotes of the same payment, or every |
  * |     | other open leg of the same refund (Stage 2 groups, {@link groupKey})              |
  * | 07  | SUCCESS 5 min after the deposit deadline (late settlement)                       |
+ * | 08  | like 00; the destination (payout or refund) tx is not final for 60 s (Stage 4)   |
+ * | 09  | like 00; Solana: a failed signature precedes the payout; Bitcoin: the payout is  |
+ * |     | split over two outputs (Stage 4, sandbox LLD §10; ../domain/chain-txs.ts)        |
  *
  * The outcome follows the deposit, as with 1Click EXACT_OUTPUT: below `minAmountIn` the deposit is
  * refunded at the deadline (`PARTIAL_DEPOSIT`), above `amountIn` the excess is refunded with the
@@ -27,7 +30,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes as utf8 } from "@noble/hashes/utils.js";
 
-export const SCENARIOS = ["00", "01", "02", "03", "04", "05", "06", "07"] as const;
+export const SCENARIOS = ["00", "01", "02", "03", "04", "05", "06", "07", "08", "09"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
 /** Provider statuses the sandbox emits (1Click v0). */
