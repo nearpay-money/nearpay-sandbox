@@ -350,6 +350,35 @@ describe("scenarios 91–94 (sandbox §4.2)", () => {
   });
 });
 
+describe("indexer feed order", () => {
+  it("a line that commits late is still delivered after the cursor (positions in commit order)", async () => {
+    const db = s.database.db;
+    const before = (await s.call("GET", "/sim/intents/events?cursor=0&limit=500")).body as { next_cursor: number };
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    // A inserts first (lower sequence value) but commits after B
+    const a = db.transaction().execute(async (tx) => {
+      await tx.insertInto("sim_intents_events").values({ tx_hash: "late-A", block_height: "1", log: "A" }).execute();
+      await held;
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    await db.insertInto("sim_intents_events").values({ tx_hash: "early-B", block_height: "2", log: "B" }).execute();
+    const first = (await s.call("GET", `/sim/intents/events?cursor=${before.next_cursor}&limit=500`)).body as {
+      events: { tx_hash: string }[];
+      next_cursor: number;
+    };
+    expect(first.events.map((e) => e.tx_hash)).toEqual(["early-B"]);
+    release();
+    await a;
+    const second = (await s.call("GET", `/sim/intents/events?cursor=${first.next_cursor}&limit=500`)).body as {
+      events: { tx_hash: string }[];
+    };
+    expect(second.events.map((e) => e.tx_hash)).toEqual(["late-A"]);
+  });
+});
+
 describe("test mode only", () => {
   it("refuses a live-mode principal (INV-8)", async () => {
     const live = await mintTestToken({ sub: "billing", ptype: "service", scp: ["sandbox.use"], lm: true });
