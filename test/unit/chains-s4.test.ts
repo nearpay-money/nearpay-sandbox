@@ -4,6 +4,7 @@
  * change on the destination side.
  */
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { validateAddress } from "@nearpay-internal/chains";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import bs58 from "bs58";
@@ -28,7 +29,8 @@ import {
   txHash,
 } from "../../src/simulated-chains/addresses.js";
 
-const fixture = (n: string) => JSON.parse(readFileSync(new URL(`../fixtures/spec-0.4/${n}`, import.meta.url), "utf8"));
+const fixture = (n: string) =>
+  JSON.parse(readFileSync(createRequire(import.meta.url).resolve(`@nearpay/spec/test-vectors/${n}`), "utf8"));
 const CHAINS = fixture("chains-solana-bitcoin.json");
 const SOLANA_TRANSFER = fixture("solana-transfer.json");
 const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";

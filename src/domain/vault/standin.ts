@@ -4,7 +4,7 @@
  * lines (`GET /sim/intents/events` receipt context). Pure: the app layer supplies the state, the block and the
  * transaction metadata, and persists the result.
  */
-import { vaultSandboxPartialShare, vaultSandboxScenarioOf } from "../../spec-0.4-gap.js";
+import { vaultSandboxPartialShare, vaultSandboxScenarioOf } from "@nearpay-internal/spec";
 import type { VaultContract } from "./contract.js";
 import {
   type EntryCall,

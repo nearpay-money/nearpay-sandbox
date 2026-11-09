@@ -85,7 +85,7 @@ nearpay-sandbox/
 
 ## Status
 
-Stage 1 (step 1.2) implemented: every sandbox route of `@nearpay-internal/spec` 0.1.1, scenarios 00–07, manual control, simulated chains and Verifier. Stage 2 (step 2.2, spec 0.2.0): live 1Click body shape, refund legs (`scenario_group` / `scenario_kind`, scenario `06` for refunds, `INTENTS` deposits funded by Verifier transfers), `POST /sim/intents/transfers` and the Explorer mirror (sandbox LLD v1.4). Stage 4 (step 4.2, spec 0.4.0; Phase A on the spec placeholder `src/spec-0.4-gap.ts`): the subscription-vault stand-in and the Solana/Bitcoin simulation (sandbox LLD v1.7).
+Stage 1 (step 1.2) implemented: every sandbox route of `@nearpay-internal/spec` 0.1.1, scenarios 00–07, manual control, simulated chains and Verifier. Stage 2 (step 2.2, spec 0.2.0): live 1Click body shape, refund legs (`scenario_group` / `scenario_kind`, scenario `06` for refunds, `INTENTS` deposits funded by Verifier transfers), `POST /sim/intents/transfers` and the Explorer mirror (sandbox LLD v1.4). Stage 4 (step 4.2, spec 0.4.0): the subscription-vault stand-in and the Solana/Bitcoin simulation (sandbox LLD v1.7).
 
 ## Built with
 

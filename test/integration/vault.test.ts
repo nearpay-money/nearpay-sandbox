@@ -4,9 +4,10 @@
  * receipt line reaches the indexer feed with its receipt context. JSON-RPC answers are validated with the spec's
  * `NearRpcResponse`.
  */
+
+import { NearFinalExecutionOutcome, NearRpcResponse, SimVaultClock } from "@nearpay-internal/spec";
 import { mintTestToken } from "@nearpay-internal/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { NearFinalExecutionOutcome, NearRpcResponse, SimVaultClock } from "../../src/spec-0.4-gap.js";
 import { KeyPairEd25519, signFunctionCall } from "../support/near-client.js";
 import { type Stack, startStack } from "../support/stack.js";
 

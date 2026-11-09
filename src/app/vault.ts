@@ -8,6 +8,8 @@
  * (`domain/vault`) runs against the loaded state, then the committed writes, the receipt lines of the indexer feed
  * (`/sim/intents/events` with receipt context) and the outcome (for `tx`) are stored together.
  */
+
+import { VAULT_CALL_METHODS } from "@nearpay/spec";
 import { sql, withTx } from "@nearpay-internal/db";
 import { ApiError } from "@nearpay-internal/service";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -29,7 +31,6 @@ import { executeVaultTx, type TxMeta } from "../domain/vault/standin.js";
 import { type TokenCap, type VaultConfig, VaultState } from "../domain/vault/state.js";
 import { dbVaultLoader, persistVault } from "../infra/db/vault-store.js";
 import { appendReceiptLines } from "../simulated-chains/intents-ledger.js";
-import { VAULT_CALL_METHODS } from "../spec-0.4-gap.js";
 import { dbNow, nextBlock, type Sandbox, type Tx } from "./context.js";
 
 const enc = new TextEncoder();

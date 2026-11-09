@@ -5,10 +5,9 @@
  * two outputs. Time scale 0.01.
  */
 import { sql } from "@nearpay-internal/db";
-import { OneClickQuoteResponse, OneClickStatusResponse } from "@nearpay-internal/spec";
+import { OneClickQuoteResponse, OneClickStatusResponse, SimTx } from "@nearpay-internal/spec";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { associatedTokenAccount, solverAddress } from "../../src/simulated-chains/addresses.js";
-import { SimTx } from "../../src/spec-0.4-gap.js";
 import { quoteRequest, USDC_BASE } from "../support/requests.js";
 import { type Stack, startStack } from "../support/stack.js";
 
