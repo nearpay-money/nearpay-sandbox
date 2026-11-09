@@ -226,6 +226,19 @@ describe("keeper collect (near-js signed send_tx)", () => {
     const clock = SimVaultClock.parse(adv.body);
     expect(clock.clock_offset_secs).toBeGreaterThan(2_629_000);
     expect(BigInt(clock.now_ns)).toBeGreaterThanOrEqual(BigInt(clock.next_collect_at as string));
+    // the views report next_collect_at on the real block time (due minus the offset), so a keeper comparing it with
+    // the block timestamp sees the advanced mandate as due
+    const blockNs = BigInt(
+      ((await rpc("block", { finality: "final" })).result as { header: { timestamp_nanosec: string } }).header
+        .timestamp_nanosec,
+    );
+    const viewNext = BigInt(JSON.parse((await view(VAULT, "next_collect_at", { mandate_id: id })) as string));
+    expect(viewNext).toBe(BigInt(clock.next_collect_at as string) - BigInt(clock.clock_offset_secs) * 1_000_000_000n);
+    expect(viewNext).toBeLessThanOrEqual(blockNs + 1_000_000_000n);
+    const mv = JSON.parse((await view(VAULT, "get_mandate", { mandate_id: id })) as string) as {
+      next_collect_at: string;
+    };
+    expect(BigInt(mv.next_collect_at)).toBe(viewNext);
     const c2 = (await rpc("send_tx", { signed_tx_base64: (await signedCollect(id)).base64 })).result as Outcome;
     expect(vaultLines(c2)[0]).toContain('"period":2');
     // carol's mandate collected period 1 at creation time, but her clock did not move

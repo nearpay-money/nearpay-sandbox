@@ -217,14 +217,20 @@ function storageAvailable(a: StorageAccount): bigint {
   return a.total > locked ? a.total - locked : 0n;
 }
 
-function nextCollectAt(m: Mandate): bigint | null {
+/**
+ * The view's `next_collect_at` on the chain's (real) block time: the mandate's due time minus its stand-in clock offset
+ * (sandbox §3.1). A keeper compares it with the block timestamp, which stays real, so an advanced mandate reads as
+ * due exactly when `collect` stops answering ERR_NOT_DUE. Offset 0 (every contract vector) = the contract's value.
+ */
+function nextCollectAt(m: Mandate, clockOffsetS = 0n): bigint | null {
   if (m.status !== "active" || maxReached(m)) return null;
-  return dueAt(m.start_at_ns, m.collected_periods, m.period_secs);
+  const due = dueAt(m.start_at_ns, m.collected_periods, m.period_secs);
+  return due === null ? null : due - clockOffsetS * 1_000_000_000n;
 }
 
-/** `MandateView` JSON in the contract's field order. */
-export function mandateViewJson(id: bigint, m: Mandate): string {
-  const next = nextCollectAt(m);
+/** `MandateView` JSON in the contract's field order (`clockOffsetS`: the stand-in clock, see `nextCollectAt`). */
+export function mandateViewJson(id: bigint, m: Mandate, clockOffsetS = 0n): string {
+  const next = nextCollectAt(m, clockOffsetS);
   return JSON.stringify({
     mandate_id: Number(id),
     payer: m.payer,
@@ -320,7 +326,7 @@ export class VaultContract {
       case "get_mandate": {
         const [id] = decodeInput(args, mandateIdArgs);
         const r = await s.mandate(id);
-        return r ? mandateViewJson(id, r.m) : "null";
+        return r ? mandateViewJson(id, r.m, r.clockOffsetS) : "null";
       }
       case "get_mandates_by_payer": {
         const [payer, from, limit] = decodeInput(args, payerArgs);
@@ -330,14 +336,14 @@ export class VaultContract {
         const views: string[] = [];
         for (const id of page) {
           const r = await s.mandate(id);
-          if (r) views.push(mandateViewJson(id, r.m));
+          if (r) views.push(mandateViewJson(id, r.m, r.clockOffsetS));
         }
         return `[${views.join(",")}]`;
       }
       case "next_collect_at": {
         const [id] = decodeInput(args, mandateIdArgs);
         const r = await s.mandate(id);
-        const next = r ? nextCollectAt(r.m) : null;
+        const next = r ? nextCollectAt(r.m, r.clockOffsetS) : null;
         return next === null ? "null" : jsonU128(next);
       }
       case "get_config":
