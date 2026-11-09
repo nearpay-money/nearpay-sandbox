@@ -5,6 +5,7 @@
  * rails and checkout treat sandbox output exactly like provider output.
  */
 import { type ChainFamily, type ChainInfo, chainByBlockchain, getChain } from "@nearpay-internal/chains";
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bech32 } from "@scure/base";
@@ -99,4 +100,40 @@ export function solverAddress(chain: string): string {
   const c = chainInfo(chain);
   if (c.family === "near") return SOLVER_ACCOUNT;
   return depositAddress(c.family, "sbx-solver", c.btc?.hrp ?? "bc");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Solana token accounts (sandbox LLD §10: `SimTx.transfers[].token_account`)
+// ---------------------------------------------------------------------------------------------
+
+export const SOLANA_TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+export const SOLANA_ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+
+/** `true` when the 32 bytes are a point on ed25519 (a wallet key); program-derived addresses are off the curve. */
+export function onCurve(bytes: Uint8Array): boolean {
+  try {
+    ed25519.Point.fromBytes(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Solana `find_program_address`: the first bump from 255 down whose derived address is off the curve. */
+export function findProgramAddress(seeds: readonly Uint8Array[], programId: string): { address: string; bump: number } {
+  const program = bs58.decode(programId);
+  const marker = enc.encode("ProgramDerivedAddress");
+  for (let bump = 255; bump >= 0; bump--) {
+    const h = sha256(new Uint8Array(Buffer.concat([...seeds, Uint8Array.of(bump), program, marker])));
+    if (!onCurve(h)) return { address: bs58.encode(h), bump };
+  }
+  throw new Error("no viable program address");
+}
+
+/** Associated token account of `owner` for `mint` (classic Token program). */
+export function associatedTokenAccount(owner: string, mint: string): string {
+  return findProgramAddress(
+    [bs58.decode(owner), bs58.decode(SOLANA_TOKEN_PROGRAM), bs58.decode(mint)],
+    SOLANA_ATA_PROGRAM,
+  ).address;
 }

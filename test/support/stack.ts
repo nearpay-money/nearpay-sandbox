@@ -52,6 +52,8 @@ export async function startStack(o: { timeScale?: number; tickMs?: number } = {}
     sandboxSigningKey: pem,
     sandboxTimeScale: o.timeScale ?? 0.01,
     sandboxTickMs: o.tickMs ?? 25,
+    sandboxVaultAccount: "vault.sandbox.near",
+    sandboxVaultFeeReceiver: "treasury.sandbox.near",
   };
   const { service } = createSandboxService({ config, keys: testKeySource(), database });
   await service.start();

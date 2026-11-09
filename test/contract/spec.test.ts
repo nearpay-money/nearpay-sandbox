@@ -34,12 +34,15 @@ afterAll(async () => {
 });
 
 describe("route coverage", () => {
-  it("binds every sandbox route of @nearpay-internal/spec (Stage 1 and Stage 2)", () => {
+  it("binds every sandbox route of @nearpay-internal/spec (Stage 1, 2 and the Stage 4 stand-in routes)", () => {
     const bindings = sandboxRoutes({} as never);
-    expect(unimplementedRoutes("sandbox", INTERNAL_ROUTES, bindings).map((r) => r.id)).toEqual([]);
-    expect(bindings).toHaveLength(INTERNAL_ROUTES.filter((r) => r.service === "sandbox").length);
+    expect(unimplementedRoutes("sandbox", INTERNAL_ROUTES, bindings, 4).map((r) => r.id)).toEqual([]);
+    const stage4 = ["sandboxNearRpc", "sandboxVaultFtTransferCall", "sandboxVaultCall", "sandboxVaultAdvance"];
+    const inSpec = INTERNAL_ROUTES.filter((r) => r.service === "sandbox").map((r) => r.id);
+    expect(inSpec).toEqual(expect.arrayContaining(stage4));
+    expect(bindings).toHaveLength(inSpec.length);
     expect(bindings.map((b) => b.route.id)).toEqual(
-      expect.arrayContaining(["sandboxSimulateIntentsTransfer", "sandboxExplorerTransactions"]),
+      expect.arrayContaining(["sandboxSimulateIntentsTransfer", "sandboxExplorerTransactions", ...stage4]),
     );
   });
 });

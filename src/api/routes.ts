@@ -12,6 +12,7 @@ import {
   sandboxFundIntents,
   sandboxGetTx,
   sandboxIntentsEvents,
+  sandboxNearRpc,
   sandboxQuote,
   sandboxSimulateDeposit,
   sandboxSimulateIntents,
@@ -19,11 +20,15 @@ import {
   sandboxStatus,
   sandboxSubmitDeposit,
   sandboxTokens,
+  sandboxVaultAdvance,
+  sandboxVaultCall,
+  sandboxVaultFtTransferCall,
 } from "@nearpay-internal/spec";
 import type { Sandbox } from "../app/context.js";
 import { getStatus, submitDeposit } from "../app/executions.js";
 import { explorerTransactions } from "../app/explorer.js";
 import { createQuote } from "../app/quotes.js";
+import { type NearRpcBody, nearRpc, vaultAdvance, vaultCall, vaultFtTransferCall } from "../app/vault.js";
 import { SANDBOX_TOKENS } from "../domain/tokens.js";
 import { getChainTx } from "../simulated-chains/chain-txs.js";
 import {
@@ -104,6 +109,23 @@ export function sandboxRoutes(sb: Sandbox): RouteBinding[] {
     implement(sandboxExplorerTransactions, async (ctx) => {
       testModeOnly(ctx);
       return explorerTransactions(sb, ctx.query);
+    }),
+    // Stage 4 — subscription-vault stand-in (sandbox LLD §3.1)
+    implement(sandboxNearRpc, async (ctx) => {
+      testModeOnly(ctx);
+      return nearRpc(sb, ctx.body as NearRpcBody) as never;
+    }),
+    implement(sandboxVaultFtTransferCall, async (ctx) => {
+      testModeOnly(ctx);
+      return vaultFtTransferCall(sb, ctx.body) as never;
+    }),
+    implement(sandboxVaultCall, async (ctx) => {
+      testModeOnly(ctx);
+      return vaultCall(sb, ctx.body) as never;
+    }),
+    implement(sandboxVaultAdvance, async (ctx) => {
+      testModeOnly(ctx);
+      return vaultAdvance(sb, ctx.body);
     }),
   ];
 }
