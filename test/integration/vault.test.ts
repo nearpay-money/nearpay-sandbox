@@ -361,22 +361,29 @@ describe("indexer feed order", () => {
     });
     // A inserts first (lower sequence value) but commits after B
     const a = db.transaction().execute(async (tx) => {
-      await tx.insertInto("sim_intents_events").values({ tx_hash: "late-A", block_height: "1", log: "A" }).execute();
+      await tx.insertInto("sim_intents_events").values({ tx_hash: "late-tx-A", block_height: "1", log: "A" }).execute();
       await held;
     });
-    await new Promise((r) => setTimeout(r, 100));
-    await db.insertInto("sim_intents_events").values({ tx_hash: "early-B", block_height: "2", log: "B" }).execute();
-    const first = (await s.call("GET", `/sim/intents/events?cursor=${before.next_cursor}&limit=500`)).body as {
-      events: { tx_hash: string }[];
-      next_cursor: number;
-    };
-    expect(first.events.map((e) => e.tx_hash)).toEqual(["early-B"]);
-    release();
-    await a;
-    const second = (await s.call("GET", `/sim/intents/events?cursor=${first.next_cursor}&limit=500`)).body as {
-      events: { tx_hash: string }[];
-    };
-    expect(second.events.map((e) => e.tx_hash)).toEqual(["late-A"]);
+    try {
+      await new Promise((r) => setTimeout(r, 100));
+      await db
+        .insertInto("sim_intents_events")
+        .values({ tx_hash: "early-tx-B", block_height: "2", log: "B" })
+        .execute();
+      const first = await s.call("GET", `/sim/intents/events?cursor=${before.next_cursor}&limit=500`);
+      expect(first.status).toBe(200);
+      const page = first.body as { events: { tx_hash: string }[]; next_cursor: number };
+      expect(page.events.map((e) => e.tx_hash)).toEqual(["early-tx-B"]);
+      release();
+      await a;
+      const second = (await s.call("GET", `/sim/intents/events?cursor=${page.next_cursor}&limit=500`)).body as {
+        events: { tx_hash: string }[];
+      };
+      expect(second.events.map((e) => e.tx_hash)).toEqual(["late-tx-A"]);
+    } finally {
+      release(); // never leave the transaction open (the stack could not stop)
+      await a;
+    }
   });
 });
 
