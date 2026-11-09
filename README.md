@@ -60,16 +60,16 @@ nearpay-sandbox/
 
 ## Configuration
 
-| Variable                      | Meaning                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| `NP_DB_URL_FILE`              | Database URL (app role for `api`, migrator role for `migrate`)                                   |
-| `NP_JWKS_URL`                 | identity's JWKS (verifies service tokens)                                                        |
-| `NP_SANDBOX_SIGNING_KEY_FILE` | Ed25519 PKCS#8 PEM that signs quotes; rails and sentinel verify with `NP_SANDBOX_SIGNING_PUBKEY` |
-| `NP_SANDBOX_TIME_SCALE`       | Multiplies every timeline offset (default 1.0; the testbed may set 0.1)                          |
-| `NP_SANDBOX_TICK_MS`          | How often due timeline steps are applied (default 200)                                           |
-| `NP_SANDBOX_VAULT_ACCOUNT`    | Account the vault stand-in plays (default `vault.sandbox.near`, billing's test-mode vault)       |
-| `NP_SANDBOX_VAULT_FEE_RECEIVER` | Treasury of the stand-in's fee legs (default `treasury.sandbox.near`)                          |
-| `NP_SANDBOX_VAULT_CAPS`       | JSON `[{token, cap, mandate_cap}]` (default per token 10^15 / 10^12 base units)                  |
+| Variable                        | Meaning                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `NP_DB_URL_FILE`                | Database URL (app role for `api`, migrator role for `migrate`)                                   |
+| `NP_JWKS_URL`                   | identity's JWKS (verifies service tokens)                                                        |
+| `NP_SANDBOX_SIGNING_KEY_FILE`   | Ed25519 PKCS#8 PEM that signs quotes; rails and sentinel verify with `NP_SANDBOX_SIGNING_PUBKEY` |
+| `NP_SANDBOX_TIME_SCALE`         | Multiplies every timeline offset (default 1.0; the testbed may set 0.1)                          |
+| `NP_SANDBOX_TICK_MS`            | How often due timeline steps are applied (default 200)                                           |
+| `NP_SANDBOX_VAULT_ACCOUNT`      | Account the vault stand-in plays (default `vault.sandbox.near`, billing's test-mode vault)       |
+| `NP_SANDBOX_VAULT_FEE_RECEIVER` | Treasury of the stand-in's fee legs (default `treasury.sandbox.near`)                            |
+| `NP_SANDBOX_VAULT_CAPS`         | JSON `[{token, cap, mandate_cap}]` (default per token 10^15 / 10^12 base units)                  |
 
 ## Behaviour
 

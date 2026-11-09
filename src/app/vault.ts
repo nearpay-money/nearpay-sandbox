@@ -399,10 +399,9 @@ async function callFunction(
           throw new MethodNotFound(p.method_name);
         let account: string;
         try {
-          [account] = tokenAccountArgs(parseJson(new TextDecoder("utf-8", { fatal: true }).decode(args)));
+          [account] = tokenAccountArgs(parseJson(args));
         } catch (e) {
-          if (e instanceof SerdeError || e instanceof TypeError)
-            throw new ContractPanic("Failed to deserialize input from JSON.");
+          if (e instanceof SerdeError) throw new ContractPanic("Failed to deserialize input from JSON.");
           throw e;
         }
         if (p.method_name === "storage_balance_of") return ok(TOKEN_STORAGE_BALANCE);

@@ -31,7 +31,6 @@ import { field, option, parseJson, SerdeError, string, struct, U128_MAX, uintStr
 import type { VaultState } from "./state.js";
 
 const enc = new TextEncoder();
-const dec = (b: Uint8Array) => new TextDecoder("utf-8", { fatal: true }).decode(b);
 
 /** Gas price used for `tokens_burnt` (yoctoNEAR per gas; mainnet's minimum, 100 Mgas⁻¹). */
 const GAS_PRICE = 100_000_000n;
@@ -127,9 +126,9 @@ const panic = (m: string): never => {
 
 function decodeArgs<T>(bytes: Uint8Array, d: (v: ReturnType<typeof parseJson>) => T): T {
   try {
-    return d(parseJson(dec(bytes)));
+    return d(parseJson(bytes));
   } catch (e) {
-    if (e instanceof SerdeError || e instanceof TypeError) return panic(DESERIALIZE_MESSAGE);
+    if (e instanceof SerdeError) return panic(DESERIALIZE_MESSAGE);
     throw e;
   }
 }
@@ -400,7 +399,7 @@ export class Runtime {
         let unused = amount;
         if (r?.ok) {
           try {
-            const u = uintString(U128_MAX)(parseJson(dec(r.bytes)));
+            const u = uintString(U128_MAX)(parseJson(r.bytes));
             unused = minBig(u, amount);
           } catch {
             unused = amount;

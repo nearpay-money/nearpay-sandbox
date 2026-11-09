@@ -66,7 +66,7 @@ export function parseMsg(msg: string): VaultMsg | "ERR_BAD_MSG" {
   try {
     const v = parseJson(msg);
     // externally tagged enum: exactly one key naming a newtype variant
-    if (v.t !== "obj" || v.v.length !== 1) return "ERR_BAD_MSG";
+    if (v.t !== "obj" || v.bad || v.v.length !== 1) return "ERR_BAD_MSG";
     const [tag, inner] = v.v[0] as readonly [string, Parameters<typeof topUp>[0]];
     if (tag === "create_mandate") {
       const [merchant_receiver, receiver_kind, amount_per_period, period_secs, start_at, max_periods, fee, ext_ref] =

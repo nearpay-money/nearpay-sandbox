@@ -9,6 +9,7 @@ import {
   option,
   parseJson,
   SerdeError,
+  string,
   struct,
   U16_MAX,
   U64_MAX,
@@ -64,11 +65,9 @@ describe("parseJson (serde_json grammar)", () => {
     ["control char", '"a\u0001"'],
     ["bad escape", '"\\x"'],
     ["short unicode escape", '"\\u12"'],
-    ["lone leading surrogate", '"\\ud800"'],
-    ["lone trailing surrogate", '"\\udc00"'],
-    ["bad low surrogate", '"\\ud800\\u0041"'],
     ["raw lone surrogate", '"\ud800"'],
     ["raw lone low surrogate", '"\udc00"'],
+    ["escape syntax inside a lone surrogate pair attempt", '"\\ud800\\x"'],
     ["unquoted key", "{a:1}"],
     ["missing colon", '{"a" 1}'],
     ["missing comma", '{"a":1 "b":2}'],
@@ -87,9 +86,64 @@ describe("parseJson (serde_json grammar)", () => {
     expect(parseJson('"\\"\\\\\\/\\b\\f\\r\\t"')).toEqual({ t: "str", v: '"\\/\b\f\r\t' });
   });
 
-  it("stops at serde_json's recursion limit (128)", () => {
-    expect(() => parseJson(`${"[".repeat(128)}${"]".repeat(128)}`)).not.toThrow();
-    expect(() => parseJson(`${"[".repeat(129)}${"]".repeat(129)}`)).toThrow(/recursion/);
+  it("typed reads stop at serde_json's recursion limit: 127 nested containers, the 128th is `deep`", () => {
+    const nest = (k: number, inner = "") => `${"[".repeat(k)}${inner}${"]".repeat(k)}`;
+    let v = parseJson(nest(127));
+    for (let k = 1; k < 127; k++) v = (v as { v: readonly (typeof v)[] }).v[0] as typeof v;
+    expect(v).toEqual({ t: "arr", v: [] });
+    const deeper = parseJson(nest(128));
+    let w = deeper;
+    for (let k = 0; k < 127; k++) w = (w as { v: readonly (typeof w)[] }).v[0] as typeof w;
+    expect(w).toEqual({ t: "deep" });
+    const s1 = struct([field("a", uint(U64_MAX))] as const, { denyUnknown: false });
+    expect(() => s1({ t: "deep" })).toThrow(SerdeError);
+    expect(() => uint(U64_MAX)({ t: "deep" })).toThrow(SerdeError);
+  });
+
+  it("ignored values follow serde_json's ignore_value: no depth limit, syntax still checked", () => {
+    const s1 = struct([field("a", uint(U64_MAX))] as const, { denyUnknown: false });
+    const deep = `${'[{"k":'.repeat(100_000)}[1,"x",{}]${"}]".repeat(100_000)}`;
+    expect(s1(parseJson(`{"a":1,"junk":${deep}}`))).toEqual([1n]);
+    for (const bad of [
+      `{"a":1,"junk":${"[".repeat(300)}${"]".repeat(299)}}`,
+      `{"a":1,"junk":${"[".repeat(300)}1,]${"]".repeat(299)}}`,
+      `{"a":1,"junk":${"[".repeat(300)}{1:2}${"]".repeat(300)}}`,
+      `{"a":1,"junk":${"[".repeat(300)}{"k" 2}${"]".repeat(300)}}`,
+      `{"a":1,"junk":${"[".repeat(300)}"\\q"${"]".repeat(300)}}`,
+      `{"a":1,"junk":${"[".repeat(300)}01${"]".repeat(300)}}`,
+      `{"a":1,"junk":${"[".repeat(300)}`,
+    ])
+      expect(() => parseJson(bad)).toThrow(SerdeError);
+    // denied when the struct denies unknown fields
+    expect(() =>
+      struct([field("a", uint(U64_MAX))] as const, { denyUnknown: true })(parseJson(`{"a":1,"j":${deep}}`)),
+    ).toThrow(SerdeError);
+  });
+
+  it("strings that are not valid Unicode fail a typed read but are accepted inside an ignored value", () => {
+    const enc = new TextEncoder();
+    const bytes = (...parts: (string | number[])[]) =>
+      Uint8Array.from(parts.flatMap((p) => (typeof p === "string" ? [...enc.encode(p)] : p)));
+    const s1 = struct([field("a", string)] as const, { denyUnknown: false });
+    for (const lone of ['"\\ud800"', '"\\udc00"', '"\\ud800\\u0041"', '"\\ud800x"']) {
+      expect(parseJson(lone)).toMatchObject({ t: "str", bad: true });
+      expect(() => string(parseJson(lone))).toThrow(SerdeError);
+      expect(() => unitEnum(["x"])(parseJson(lone))).toThrow(SerdeError);
+      expect(() => uintString(U128_MAX)(parseJson(lone))).toThrow(SerdeError);
+      expect(s1(parseJson(`{"a":"ok","j":${lone}}`))).toEqual(["ok"]);
+      expect(() => s1(parseJson(`{"a":${lone}}`))).toThrow(SerdeError);
+      expect(() => s1(parseJson(`{"a":"ok",${lone}:1}`))).toThrow(SerdeError); // keys are always read
+      expect(s1(parseJson(`{"a":"ok","j":{${lone}:1}}`))).toEqual(["ok"]); // keys of an ignored object are not
+    }
+    // raw invalid UTF-8 (from_slice)
+    expect(s1(parseJson(bytes('{"a":"ok","j":"', [0xff, 0xc3], '"}')))).toEqual(["ok"]);
+    expect(() => s1(parseJson(bytes('{"a":"', [0xff], '"}')))).toThrow(SerdeError);
+    expect(() => s1(parseJson(bytes('{"', [0xc3], '":1,"a":"ok"}')))).toThrow(SerdeError);
+    expect(s1(parseJson(bytes('{"a":"', [0xc3, 0xa9], '"}')))).toEqual(["é"]);
+    expect(() => parseJson(bytes([0xff]))).toThrow(SerdeError); // outside a string
+    expect(() => parseJson(bytes('"a', [0x01], '"'))).toThrow(SerdeError); // control characters even when ignored
+    // a str argument (from_str, `msg`) is a Rust String: a raw lone surrogate is refused outright
+    expect(() => parseJson('{"a":"ok","j":"\ud800"}')).toThrow(SerdeError);
   });
 });
 

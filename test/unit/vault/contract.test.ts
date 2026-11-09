@@ -47,6 +47,13 @@ describe("near-sdk method wrapper", () => {
     expect(failure(await h.call("k.near", "collect", '{"mandate_id":5,"x":1}'))).toBe(
       "Smart contract panicked: ERR_NOT_FOUND",
     );
+    // ignored values are not validated (serde_json ignore_value): deep nesting, invalid Unicode
+    expect(
+      failure(await h.call("k.near", "collect", `{"mandate_id":5,"x":${"[".repeat(500)}${"]".repeat(500)}}`)),
+    ).toBe("Smart contract panicked: ERR_NOT_FOUND");
+    expect(failure(await h.call("k.near", "collect", '{"mandate_id":5,"x":"\\udc00"}'))).toBe(
+      "Smart contract panicked: ERR_NOT_FOUND",
+    );
     // invalid UTF-8 in the raw arguments
     const r = await executeVaultTx({
       vault: h.vault,

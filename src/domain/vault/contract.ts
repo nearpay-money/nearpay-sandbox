@@ -121,10 +121,9 @@ const jsonU128 = (x: bigint) => `"${x.toString()}"`;
 
 function decodeInput<T>(bytes: Uint8Array, d: Decoder<T>): T {
   try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return d(parseJson(text));
+    return d(parseJson(bytes));
   } catch (e) {
-    if (e instanceof SerdeError || e instanceof TypeError) return panic(DESERIALIZE_MESSAGE);
+    if (e instanceof SerdeError) return panic(DESERIALIZE_MESSAGE);
     throw e;
   }
 }
@@ -206,7 +205,7 @@ function merchantLegDelivered(kind: Mandate["receiver_kind"], share: bigint, r: 
   if (r.bytes.length > MAX_RESULT_LEN) return share; // Err(TooLong) → treated as delivered
   if (kind === "near_account") return share;
   try {
-    const used = uintString(U128_MAX)(parseJson(new TextDecoder("utf-8", { fatal: true }).decode(r.bytes)));
+    const used = uintString(U128_MAX)(parseJson(r.bytes));
     return minBig(used, share);
   } catch {
     return share; // unparseable success: assume the tokens left (V1)
