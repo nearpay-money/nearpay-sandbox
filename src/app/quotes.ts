@@ -19,12 +19,12 @@
  */
 import { sign } from "node:crypto";
 import { quoteHash } from "@defuse-protocol/one-click-sdk-typescript";
-import { NearAccountId } from "@nearpay/spec";
 import { validateAddress } from "@nearpay-internal/chains";
 import { canonicalJson, sql } from "@nearpay-internal/db";
 import { uuidv7 } from "@nearpay-internal/ids";
 import { ApiError } from "@nearpay-internal/service";
 import type { OneClickQuoteResponse, SandboxQuoteRequest } from "@nearpay-internal/spec";
+import { NearAccountId } from "@nearpay-money/spec";
 import bs58 from "bs58";
 import { formatted, QuoteMathError, quoteAmounts, usdValue } from "../domain/quote-math.js";
 import { type SandboxToken, tokenById } from "../domain/tokens.js";

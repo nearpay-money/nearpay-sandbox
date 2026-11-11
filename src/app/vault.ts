@@ -9,9 +9,9 @@
  * (`/sim/intents/events` with receipt context) and the outcome (for `tx`) are stored together.
  */
 
-import { VAULT_CALL_METHODS } from "@nearpay/spec";
 import { sql, withTx } from "@nearpay-internal/db";
 import { ApiError } from "@nearpay-internal/service";
+import { VAULT_CALL_METHODS } from "@nearpay-money/spec";
 import { sha256 } from "@noble/hashes/sha2.js";
 import bs58 from "bs58";
 import { SANDBOX_TOKENS } from "../domain/tokens.js";

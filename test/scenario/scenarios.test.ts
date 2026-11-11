@@ -2,10 +2,11 @@
  * Scenario timelines 00–07 end to end over HTTP (sandbox LLD §4, api-conventions §8), at time scale
  * 0.01 with the background materializer running, plus manual control (`/sim/advance`).
  */
-import { ErrorEnvelope } from "@nearpay/spec";
+
 import { sql } from "@nearpay-internal/db";
 import { mtTransfers } from "@nearpay-internal/intents";
 import { OneClickQuoteResponse, OneClickStatusResponse, SimTx } from "@nearpay-internal/spec";
+import { ErrorEnvelope } from "@nearpay-money/spec";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { solverAddress } from "../../src/simulated-chains/addresses.js";
 import { MERCHANT, PAYER, quoteRequest, USDC_ARB, USDC_NEAR } from "../support/requests.js";

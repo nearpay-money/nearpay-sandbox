@@ -2,12 +2,12 @@
  * Contract test of the vault stand-in against the spec's `test-vectors/vault.json` (sandbox LLD §7; the same file
  * the vault's own unit tests assert): the stand-in, driven through its runtime, must produce every event line, error
  * string, rejection line, view result and RPC shape byte for byte.
- * The vectors are read from the published package (`@nearpay/spec/test-vectors/vault.json`).
+ * The vectors are read from the published package (`@nearpay-money/spec/test-vectors/vault.json`).
  */
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { formatVaultEventLog, type VaultEvent, vaultMsgJson } from "@nearpay/spec";
 import { nearPanicStatus, SANDBOX_VAULT_DEFAULTS, vaultSandboxScenarioOf } from "@nearpay-internal/spec";
+import { formatVaultEventLog, type VaultEvent, vaultMsgJson } from "@nearpay-money/spec";
 import { describe, expect, it } from "vitest";
 import { vaultConfigFrom } from "../../../src/app/vault.js";
 import {
@@ -31,7 +31,7 @@ import { checkConfig } from "../../../src/domain/vault/state.js";
 import { config, failure, Harness, ScriptedFaults, statusValue, T0, USDC, USDT } from "../../support/vault-harness.js";
 
 const V = JSON.parse(
-  readFileSync(createRequire(import.meta.url).resolve("@nearpay/spec/test-vectors/vault.json"), "utf8"),
+  readFileSync(createRequire(import.meta.url).resolve("@nearpay-money/spec/test-vectors/vault.json"), "utf8"),
 );
 const vectorLog = (c: string): string =>
   (V.events as { case: string; log: string }[]).find((e) => e.case === c)?.log as string;

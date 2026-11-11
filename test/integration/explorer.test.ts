@@ -1,7 +1,8 @@
 /** Explorer mirror `GET /api/v0/transactions` (sandbox LLD §3, rails §8.5 test mode) over HTTP on real Postgres. */
-import { ErrorEnvelope } from "@nearpay/spec";
+
 import { sql } from "@nearpay-internal/db";
 import { ExplorerTransactionList, OneClickQuoteResponse } from "@nearpay-internal/spec";
+import { ErrorEnvelope } from "@nearpay-money/spec";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { quoteRequest } from "../support/requests.js";
 import { mintServiceToken, mintTestToken, type Stack, startStack } from "../support/stack.js";
