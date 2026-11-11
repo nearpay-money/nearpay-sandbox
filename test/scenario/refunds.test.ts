@@ -5,7 +5,6 @@
  */
 
 import { verifyQuoteSignature } from "@defuse-protocol/one-click-sdk-typescript";
-import { ErrorEnvelope, type IntentMessage } from "@nearpay/spec";
 import { sql } from "@nearpay-internal/db";
 import {
   buildPayload,
@@ -17,6 +16,7 @@ import {
   signNep413,
 } from "@nearpay-internal/intents";
 import { OneClickQuoteResponse, OneClickStatusResponse, type SandboxQuoteRequest, SimTx } from "@nearpay-internal/spec";
+import { ErrorEnvelope, type IntentMessage } from "@nearpay-money/spec";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { solverAddress } from "../../src/simulated-chains/addresses.js";

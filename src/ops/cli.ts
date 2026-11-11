@@ -5,8 +5,8 @@
  * document; errors print `{"error": …}` and exit 1 (2: usage).
  */
 
-import { NearAccountId } from "@nearpay/spec";
 import { withTx } from "@nearpay-internal/db";
+import { NearAccountId } from "@nearpay-money/spec";
 import type { Sandbox } from "../app/context.js";
 import { balanceOf } from "../simulated-chains/intents-ledger.js";
 import { fundIntents } from "../simulated-chains/verifier.js";

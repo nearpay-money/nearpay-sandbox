@@ -1,7 +1,7 @@
 /** The 1Click mirror over HTTP: quotes, signatures, status, deposits, auth and test-mode isolation. */
 import { verifyQuoteSignature } from "@defuse-protocol/one-click-sdk-typescript";
-import { ErrorEnvelope } from "@nearpay/spec";
 import { OneClickQuoteResponse, OneClickStatusResponse, OneClickToken } from "@nearpay-internal/spec";
+import { ErrorEnvelope } from "@nearpay-money/spec";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ETH_BASE, PAYER, quoteRequest, USDC_ARB, USDC_BASE, USDC_NEAR } from "../support/requests.js";
 import { mintServiceToken, mintTestToken, type Stack, startStack } from "../support/stack.js";

@@ -30,7 +30,7 @@ import {
 } from "../../src/simulated-chains/addresses.js";
 
 const fixture = (n: string) =>
-  JSON.parse(readFileSync(createRequire(import.meta.url).resolve(`@nearpay/spec/test-vectors/${n}`), "utf8"));
+  JSON.parse(readFileSync(createRequire(import.meta.url).resolve(`@nearpay-money/spec/test-vectors/${n}`), "utf8"));
 const CHAINS = fixture("chains-solana-bitcoin.json");
 const SOLANA_TRANSFER = fixture("solana-transfer.json");
 const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";

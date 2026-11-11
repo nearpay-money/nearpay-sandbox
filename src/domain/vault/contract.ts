@@ -10,7 +10,7 @@
  * (`./runtime.ts`); a panic throws {@link ContractPanic} and the runtime reverts the receipt. The events are the
  * spec's `formatVaultEventLog` lines, which the contract test pins against `test-vectors/vault.json`.
  */
-import { formatVaultEventLog, type VaultEvent } from "@nearpay/spec";
+import { formatVaultEventLog, type VaultEvent } from "@nearpay-money/spec";
 import { accountId } from "./account-id.js";
 import { dueAt, maxBig, minBig, split } from "./math.js";
 import { type CreateMandateMsg, MIN_PERIOD_SECS, parseMsg, validateCreate } from "./msg.js";

@@ -1,5 +1,5 @@
 /** The simulated Verifier: real signatures, mainnet rejection messages, atomic batches, event feed. */
-import { ErrorEnvelope, type IntentMessage, type MultiPayload } from "@nearpay/spec";
+
 import {
   buildPayload,
   classifyVerifierError,
@@ -13,6 +13,7 @@ import {
   signNep413,
   signRawEd25519,
 } from "@nearpay-internal/intents";
+import { ErrorEnvelope, type IntentMessage, type MultiPayload } from "@nearpay-money/spec";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
