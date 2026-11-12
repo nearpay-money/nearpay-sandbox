@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { validateAddress } from "@nearpay-internal/chains";
+import { assetIdBlockchain, parseAssetId } from "@nearpay-money/spec";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import bs58 from "bs58";
 import { describe, expect, it } from "vitest";
@@ -52,12 +53,13 @@ describe("registry (Solana USDT, SPL asset-id rule)", () => {
     });
   });
 
-  it("every sol- entry satisfies nep141:sol-<hex(keccak256(mint)[12..32])>.omft.near", () => {
+  it("every sol- entry names its mint: nep141:sol-<hex(keccak256(mint)[12..32])>.omft.near or sol-0x<hex>.omdep.near", () => {
     const spl = SANDBOX_TOKENS.filter((t) => t.assetId.startsWith("nep141:sol-"));
-    expect(spl.length).toBeGreaterThanOrEqual(2);
+    expect(spl.length).toBeGreaterThanOrEqual(3);
     for (const t of spl) {
       const h = Buffer.from(keccak_256(bs58.decode(t.contractAddress as string)).slice(12, 32)).toString("hex");
-      expect(t.assetId).toBe(`nep141:sol-${h}.omft.near`);
+      expect([`nep141:sol-${h}.omft.near`, `nep141:sol-0x${h}.omdep.near`]).toContain(t.assetId);
+      expect(parseAssetId(t.assetId)).toMatchObject({ blockchain: "sol", kind: "hash20", token: h });
     }
     for (const m of CHAINS.omft.spl_mints as { mint: string; keccak256_hex: string; asset_id: string }[])
       expect(Buffer.from(keccak_256(bs58.decode(m.mint))).toString("hex")).toBe(m.keccak256_hex);
@@ -171,5 +173,16 @@ describe("scenarios 08 and 09", () => {
     expect(splitBitcoinPayout(101n)).toEqual([50n, 51n]);
     expect(splitBitcoinPayout(2n)).toEqual([1n, 1n]);
     expect(splitBitcoinPayout(1n)).toEqual([1n]);
+  });
+});
+
+describe("asset id shapes (spec 0.5.2)", () => {
+  it("every token's id names the chain of its blockchain code (omft, omdep with the bnb alias, NEP-141)", () => {
+    for (const t of SANDBOX_TOKENS) expect(assetIdBlockchain(t.assetId), t.assetId).toBe(t.blockchain);
+    expect(tokenById("nep141:bnb-0x55d398326f99059ff775485246999027b3197955.omdep.near")).toMatchObject({
+      blockchain: "bsc",
+      decimals: 18,
+      contractAddress: "0x55d398326f99059ff775485246999027b3197955",
+    });
   });
 });
