@@ -3,7 +3,11 @@
  * asset ids of USDC, USDT, ETH, wNEAR, SOL and BTC on NEAR, Base, Arbitrum, Ethereum, Solana and
  * Bitcoin (taken from 1Click `GET /v0/tokens`, 2026-11-05; Solana USDT from the spec 0.4.0 chain vectors,
  * sandbox LLD §10), with fixed USD prices so every quote is deterministic. Every `sol-` asset id satisfies
- * the SPL rule `nep141:sol-<hex(keccak256(mint)[12..32])>.omft.near`.
+ * the SPL rule `nep141:sol-<hex(keccak256(mint)[12..32])>.omft.near` (or `sol-0x<hex>.omdep.near`).
+ *
+ * Since 2026-11 1Click also lists tokens under the `omdep` PoA bridge suffix (prefix aliases such as `bnb` for BNB
+ * Smart Chain; spec `parseAssetId`, 0.5.2). Two live-list `omdep` entries are included so test mode exercises that
+ * shape end to end: USDT on BNB Smart Chain and USD1 on Solana.
  */
 
 export interface SandboxToken {
@@ -115,6 +119,25 @@ export const SANDBOX_TOKENS: readonly SandboxToken[] = Object.freeze([
   t("sol", "SOL", 9, PRICES.SOL, "nep141:sol.omft.near", "solana"),
   // Bitcoin
   t("btc", "BTC", 8, PRICES.BTC, "nep141:btc.omft.near", "bitcoin"),
+  // omdep (2026-11, live 1Click list): USDT on BNB Smart Chain (prefix bnb, blockchain bsc), USD1 on Solana
+  t(
+    "bsc",
+    "USDT",
+    18,
+    PRICES.USD,
+    "nep141:bnb-0x55d398326f99059ff775485246999027b3197955.omdep.near",
+    "tether",
+    "0x55d398326f99059ff775485246999027b3197955",
+  ),
+  t(
+    "sol",
+    "USD1",
+    6,
+    PRICES.USD,
+    "nep141:sol-0x936420c6ae310eb29511d139991654f922456fbe.omdep.near",
+    "usd1-wlfi",
+    "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB",
+  ),
 ]);
 
 const BY_ID = new Map(SANDBOX_TOKENS.map((x) => [x.assetId, x]));
