@@ -1,6 +1,6 @@
 # AGENTS.md — nearpay-sandbox
 
-You are working in **nearpay-sandbox**, one of 27 NearPay repositories (`nearpay-brain/architecture/repositories.md`).
+You are working in **nearpay-sandbox**, one of 26 NearPay repositories (`nearpay-brain/architecture/repositories.md`).
 Scope: Deterministic simulator of the route provider and chains for test mode, local development and E2E (NEAR Intents has no testnet).
 
 ## Before changing anything

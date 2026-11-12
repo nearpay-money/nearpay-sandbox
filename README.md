@@ -1,6 +1,11 @@
 # nearpay-sandbox
 
-> Deterministic simulator of the route provider and chains for test mode, local development and E2E (NEAR Intents has no testnet).
+Deterministic simulator of the route provider (1Click), the NEAR Intents Verifier, the chains and the subscription vault. It is what NearPay's test mode, local development and the end-to-end tests run on, because NEAR Intents has no testnet.
+
+Part of [NearPay](https://github.com/nearpay-money/nearpay) — start there for the live demo, the architecture diagram and the full "do X, see Y" walkthrough.
+
+- **Where it sits:** internal only. In test mode rails uses it as its route provider, Explorer feed and chain source; agentpay submits signed test payloads to its simulated Verifier; billing's keeper talks to its vault stand-in over a NEAR JSON-RPC subset; sentinel re-reads test quotes from it; payments' test helpers simulate deposits through it. It calls no other service and refuses live-mode principals (`403 livemode_forbidden`).
+- **Status:** NearPay runs on NEAR mainnet as a closed beta (https://nearpay.money); this service backs the test mode of that deployment. Its vault stand-in is also the only vault in use today: the real subscription-vault contract is not deployed on mainnet yet (planned account `v1.nearpay-money.near`).
 
 |                                       |                                                                       |
 | ------------------------------------- | --------------------------------------------------------------------- |
@@ -13,15 +18,15 @@
 
 ## Documentation
 
-This repo stays surgical: design docs live in [`nearpay-brain`](../nearpay-brain/README.md), not here.
+Design docs live in [`nearpay-brain`](https://github.com/nearpay-money/nearpay-brain), not here.
 
-- `nearpay-brain/lld/sandbox.md` — **low-level design (dev-ready; implement from this)**
-- `nearpay-brain/lld/audits/sandbox.md` — audit findings already folded into the LLD
-- `nearpay-brain/roadmap/development-plan.md` — stage and step this repo is built in
-- `nearpay-brain/architecture/hld.md` — system design
-- `nearpay-brain/architecture/repositories.md` — repo topology and dependency rules
-- `nearpay-brain/decisions/ADR-0007-test-mode-sandbox.md`
-- `nearpay-brain/architecture/api-conventions.md#8-test-mode`
+- [`lld/sandbox.md`](https://github.com/nearpay-money/nearpay-brain/blob/main/lld/sandbox.md) — low-level design this repo is implemented from
+- [`lld/audits/sandbox.md`](https://github.com/nearpay-money/nearpay-brain/blob/main/lld/audits/sandbox.md) — audit findings already folded into the LLD
+- [`roadmap/development-plan.md`](https://github.com/nearpay-money/nearpay-brain/blob/main/roadmap/development-plan.md) — stage and step this repo is built in
+- [`architecture/hld.md`](https://github.com/nearpay-money/nearpay-brain/blob/main/architecture/hld.md) — system design
+- [`architecture/repositories.md`](https://github.com/nearpay-money/nearpay-brain/blob/main/architecture/repositories.md) — repo topology and dependency rules
+- [`decisions/ADR-0007-test-mode-sandbox.md`](https://github.com/nearpay-money/nearpay-brain/blob/main/decisions/ADR-0007-test-mode-sandbox.md)
+- [`architecture/api-conventions.md#8-test-mode`](https://github.com/nearpay-money/nearpay-brain/blob/main/architecture/api-conventions.md#8-test-mode)
 
 ## Layout
 
@@ -48,15 +53,27 @@ nearpay-sandbox/
 └── Dockerfile                distroless Node 22 image, `node dist/main.js <process>`
 ```
 
+## Verify this repo
+
+Needs Node 22 (`.nvmrc`) and pnpm 9. `.npmrc` points the `@nearpay-money` and `@nearpay-internal` scopes at a local package registry, so start that first.
+
+1. Start the local registry (no Docker, Node 22 only):
+   `git clone https://github.com/nearpay-money/nearpay-deploy ../nearpay-deploy && ../nearpay-deploy/scripts/registry.sh start`
+   → `curl http://127.0.0.1:4873/-/ping` answers `{}`.
+2. `pnpm install --frozen-lockfile` → ends with `Done in …`, no registry errors.
+3. `pnpm test` (unit and property tests: scenarios, quote signing, the simulated Verifier and chains, the vault port against the spec's `test-vectors/vault.json`; no Docker) → `Test Files  16 passed (16)`, `Tests  195 passed (195)`.
+4. `pnpm verify` (the full gate: typecheck, lint, unit tests with the coverage gate of ≥ 90 % branches on the pure code, integration tests, build) → exits 0. The integration, scenario and contract tests run on a real Postgres started by Testcontainers, so this step needs a running Docker daemon; steps 1–3 do not.
+5. Optional, with Docker: the `docker build` line in the table below produces `nearpay/sandbox:local`, the image the rails, sentinel and agentpay integration tests start.
+
 ## Commands
 
-| Command                                                                                                    | What it does                                                                                                                                              |
-| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm install`                                                                                             | Install (Node 22, pnpm 9); `@nearpay-money/*` and `@nearpay-internal/*` come from the local registry (`.npmrc`, `nearpay-deploy/scripts/up.sh` starts it) |
-| `pnpm test`                                                                                                | Unit and property tests                                                                                                                                   |
-| `pnpm test:integration`                                                                                    | Integration, scenario and contract tests on real Postgres (Testcontainers; needs Docker)                                                                  |
-| `pnpm verify`                                                                                              | typecheck + lint + unit tests with the coverage gate + integration tests + build                                                                          |
-| `docker build --network host --build-arg NP_REGISTRY_URL=http://127.0.0.1:4873 -t nearpay/sandbox:local .` | Image (what `up.sh` runs)                                                                                                                                 |
+| Command                                                                                                    | What it does                                                                                      |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile`                                                                           | Install (Node 22, pnpm 9); NearPay packages come from the local registry (see "Verify this repo") |
+| `pnpm test`                                                                                                | Unit and property tests                                                                           |
+| `pnpm test:integration`                                                                                    | Integration, scenario and contract tests on real Postgres (Testcontainers; needs Docker)          |
+| `pnpm verify`                                                                                              | typecheck + lint + unit tests with the coverage gate + integration tests + build                  |
+| `docker build --network host --build-arg NP_REGISTRY_URL=http://127.0.0.1:4873 -t nearpay/sandbox:local .` | Image (what nearpay-deploy's `scripts/up.sh` runs)                                                |
 
 ## Configuration
 
@@ -87,6 +104,12 @@ nearpay-sandbox/
 
 Stage 1 (step 1.2) implemented: every sandbox route of `@nearpay-internal/spec` 0.1.1, scenarios 00–07, manual control, simulated chains and Verifier. Stage 2 (step 2.2, spec 0.2.0): live 1Click body shape, refund legs (`scenario_group` / `scenario_kind`, scenario `06` for refunds, `INTENTS` deposits funded by Verifier transfers), `POST /sim/intents/transfers` and the Explorer mirror (sandbox LLD v1.4). Stage 4 (step 4.2, spec 0.4.0): the subscription-vault stand-in and the Solana/Bitcoin simulation (sandbox LLD v1.7).
 
+Since then: `.omdep.near` tokens in the test-mode registry (USDT on BNB Smart Chain, USD1 on Solana) and kit 0.6.0 (materializer liveness heartbeat). Current pins (`package.json`): `@nearpay-money/spec` 0.5.2, kit packages 0.6.0.
+
 ## Built with
 
-TypeScript 5, Node 22, `@nearpay-internal/*` kit (service, db, chains, intents, money), `@defuse-protocol/one-click-sdk-typescript` (quote hash), `@noble/hashes`, `@scure/base` (bech32), `bs58`, Kysely + pg; tests with Vitest, fast-check and Testcontainers. Code and documentation are written with AI assistance (Claude) under human direction and review.
+- Runtime: TypeScript 5 on Node 22; `@nearpay-internal/*` kit (service, db, auth, http, chains, intents, money, ids) with Fastify and Kysely + pg underneath; `@defuse-protocol/one-click-sdk-typescript` (quote hash), `@noble/curves`, `@noble/hashes`, `@scure/base` (bech32), `bs58`, `zod`.
+- Tests and tooling: Vitest, fast-check, Testcontainers (through `@nearpay-internal/testing`), `@near-js/*` (test only: borsh transactions for the vault stand-in), Biome.
+- Licence: Apache-2.0 (`LICENSE`).
+
+Code and documentation are written with AI assistance (Claude) under human direction and review. Built for the NEAR Hackathon (Nov 2026).
