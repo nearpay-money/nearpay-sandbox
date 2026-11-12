@@ -2,7 +2,7 @@
 import { createPrivateKey } from "node:crypto";
 import type { KeySource } from "@nearpay-internal/auth";
 import { createDb, type Database, migrationStatus, sql } from "@nearpay-internal/db";
-import { type BackgroundTask, createService, type Service } from "@nearpay-internal/service";
+import { type BackgroundTask, createService, type Heartbeat, type Service } from "@nearpay-internal/service";
 import { sandboxRoutes } from "../api/routes.js";
 import type { Config } from "../config.js";
 import { VaultContract } from "../domain/vault/contract.js";
@@ -21,20 +21,26 @@ export interface SandboxServiceOptions {
   database?: Database<DB>;
 }
 
-function materializer(sb: Sandbox, tickMs: number): BackgroundTask {
+/** Liveness budget of the materializer (kit 0.6.0, KIT-4): it beats on every tick, failed ones included. */
+export const MATERIALIZER_MAX_SILENCE_MS = 120_000;
+
+export function materializer(sb: Sandbox, tickMs: number): BackgroundTask {
   return {
     name: "materializer",
-    start() {
+    maxSilenceMs: MATERIALIZER_MAX_SILENCE_MS,
+    start(heartbeat?: Heartbeat) {
       let stopped = false;
       let wake: (() => void) | null = null;
       const loop = (async () => {
         while (!stopped) {
+          let full = false;
           try {
-            const n = await materializeDue(sb);
-            if (n === 50) continue;
+            full = (await materializeDue(sb)) === 50;
           } catch (e) {
             sb.log.error({ err: e }, "materializer tick failed");
           }
+          heartbeat?.beat();
+          if (full) continue;
           await new Promise<void>((r) => {
             const t = setTimeout(r, tickMs);
             wake = () => {
